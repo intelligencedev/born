@@ -50,7 +50,9 @@ func TestDiTTinyParity(t *testing.T) {
 	want, _ := loadFixture(t, "tinydit.out")
 	m := maxAbsDiff(t, got, want)
 	t.Logf("tiny DiT output maxAbs = %g", m)
-	if m > 1e-4 {
+	// Measured: 1.2e-6 with f32 weight storage (commit history), 4.2e-4 with
+	// the deliberate f16 storage (halves the 12B model's memory/bandwidth).
+	if m > 2e-3 {
 		// Localize: compare stages in graph order.
 		for _, stage := range []string{"temb", "text_fusion", "txt_in", "block0", "block1"} {
 			w, shape := loadFixture(t, "tinydit.stage."+stage)
