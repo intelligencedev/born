@@ -92,8 +92,13 @@ axes_dim={32,48,48})` builds the pe tensor consumed by `Rope::attention`.
 ## Sampler
 
 - Prediction: `FLUX_FLOW_PRED` (flow matching, velocity prediction).
-- Flow shift: **1.15 constant** for krea2 (`default_flow_shift = 1.15f`) — NOT
-  resolution-dynamic. Turbo: 8 steps, cfg 0.0 (no negative pass).
+- Flow shift: `default_flow_shift = 1.15f` for krea2.
+- Shift formula (runtime/denoiser.hpp:696): `flux_time_shift(mu, 1, t) =
+  e^mu / (e^mu + (1/t - 1))`; sigmas over `t = 1 - i/n`, sigma[n] = 0.
+- OPEN (resolve during oracle run via `sd-cli -v` logs + T10 fixture): whether
+  krea2 sampling uses constant mu = 1.15 (FluxFlowDenoiser/default shift) or
+  FluxScheduler's resolution-dependent mu (base_shift 0.5 → max_shift 1.15 by
+  image_seq_len). Turbo: 8 steps, cfg 0.0 (no negative pass).
 
 ## VAE
 
