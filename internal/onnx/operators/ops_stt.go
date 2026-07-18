@@ -15,6 +15,7 @@ func (r *Registry) registerSTTOps() {
 	r.Register("Range", handleRange)
 	r.Register("Neg", handleNeg)
 	r.Register("InstanceNormalization", handleInstanceNorm)
+	r.Register("Trilu", handleTrilu)
 }
 
 // handleRange implements ONNX Range(start, limit, delta) for int64 and float32
@@ -151,6 +152,53 @@ func handleInstanceNorm(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*
 			oseg := od[(ni*c+ci)*spatial:][:spatial]
 			for i, v := range seg {
 				oseg[i] = float32((float64(v)-mean)*inv*s + b)
+			}
+		}
+	}
+	return []*tensor.RawTensor{out}, nil
+}
+
+// handleTrilu implements ONNX Trilu for float32 [..., R, C]: upper=1 (default)
+// zeroes elements below the k-th diagonal, upper=0 zeroes above it. k comes
+// from the optional second input (int64 scalar, default 0).
+func handleTrilu(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	if len(inputs) < 1 || inputs[0] == nil {
+		return nil, fmt.Errorf("trilu: requires input")
+	}
+	x := inputs[0]
+	if x.DType() != tensor.Float32 {
+		return nil, fmt.Errorf("trilu: only float32 supported, got %s", x.DType())
+	}
+	shape := x.Shape()
+	if len(shape) < 2 {
+		return nil, fmt.Errorf("trilu: expected >=2D, got %v", shape)
+	}
+	var k int64
+	if len(inputs) >= 2 && inputs[1] != nil && inputs[1].NumElements() > 0 {
+		k = inputs[1].AsInt64()[0]
+	}
+	upper := GetAttrInt(node, "upper", 1) != 0
+	rows, cols := shape[len(shape)-2], shape[len(shape)-1]
+	batch := 1
+	for _, d := range shape[:len(shape)-2] {
+		batch *= d
+	}
+	out, err := tensor.NewRaw(shape, tensor.Float32, x.Device())
+	if err != nil {
+		return nil, err
+	}
+	xd, od := x.AsFloat32(), out.AsFloat32()
+	for b := 0; b < batch; b++ {
+		base := b * rows * cols
+		for r := 0; r < rows; r++ {
+			for c := 0; c < cols; c++ {
+				keep := int64(c-r) >= k
+				if !upper {
+					keep = int64(c-r) <= k
+				}
+				if keep {
+					od[base+r*cols+c] = xd[base+r*cols+c]
+				}
 			}
 		}
 	}

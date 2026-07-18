@@ -43,3 +43,17 @@ func TestInstanceNormalization(t *testing.T) {
 		-1.34164, -0.44721, 0.44721, 1.34164,
 	})
 }
+
+// Trilu: upper (default) keeps elements on/above the k-th diagonal.
+func TestTrilu(t *testing.T) {
+	x := stF32(t, tensor.Shape{3, 3}, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9})
+	up := stExec(t, &Node{OpType: "Trilu"}, x)
+	stAssertClose(t, up.AsFloat32(), []float32{1, 2, 3, 0, 5, 6, 0, 0, 9})
+	lo := stExec(t, &Node{OpType: "Trilu", Attributes: []Attribute{{Name: "upper", I: 0}}},
+		stF32(t, tensor.Shape{3, 3}, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9}))
+	stAssertClose(t, lo.AsFloat32(), []float32{1, 0, 0, 4, 5, 0, 7, 8, 9})
+	// k=1 upper: shift diagonal right by one
+	k := stI64(t, tensor.Shape{}, []int64{1})
+	up1 := stExec(t, &Node{OpType: "Trilu"}, x, k)
+	stAssertClose(t, up1.AsFloat32(), []float32{0, 2, 3, 0, 0, 6, 0, 0, 0})
+}
