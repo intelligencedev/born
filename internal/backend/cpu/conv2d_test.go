@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestConv2D_BasicForward tests basic Conv2D forward pass.

@@ -7,7 +7,7 @@ package llama
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/gguf"
+	"github.com/intelligencedev/born/internal/gguf"
 )
 
 // TestDefaultConfig verifies that DefaultConfig returns sensible TinyLlama-1.1B defaults.

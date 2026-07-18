@@ -3,7 +3,7 @@ package nn
 import (
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // CrossEntropyLoss computes cross-entropy loss for multi-class classification.

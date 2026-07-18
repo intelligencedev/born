@@ -5,9 +5,9 @@
 package optim
 
 import (
-	"github.com/born-ml/born/internal/optim"
-	"github.com/born-ml/born/nn"
-	"github.com/born-ml/born/tensor"
+	"github.com/intelligencedev/born/internal/optim"
+	"github.com/intelligencedev/born/nn"
+	"github.com/intelligencedev/born/tensor"
 )
 
 // Optimizer interface defines the common interface for all optimizers.

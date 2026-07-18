@@ -5,7 +5,7 @@ package webgpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func TestIsAvailable(t *testing.T) {

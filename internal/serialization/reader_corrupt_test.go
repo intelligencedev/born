@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // v1Prefix builds the 20-byte fixed prefix of a v1 .born stream: magic, version,

@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/born-ml/born/backend/cpu"
-	"github.com/born-ml/born/internal/serialization"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/backend/cpu"
+	"github.com/intelligencedev/born/internal/serialization"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestBornFormatRoundTrip tests save → load round-trip for a simple Linear module.

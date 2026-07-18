@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // ChunkOp represents a chunk operation that splits a tensor into n equal parts.

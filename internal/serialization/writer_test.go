@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // errInjected is the sentinel returned by the failing writer and closer stubs.

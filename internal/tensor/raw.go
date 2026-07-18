@@ -228,6 +228,10 @@ func (r *RawTensor) AsFloat32() []float32 {
 	// Trigger lazy realization if needed
 	data := r.Data()
 	//nolint:gosec // unsafe.Slice for zero-copy performance, bounds checked by NumElements()
+	if len(data) == 0 {
+		return nil
+	}
+	//nolint:gosec // pointer valid: len(data) > 0 checked above
 	return unsafe.Slice((*float32)(unsafe.Pointer(&data[0])), r.NumElements())
 }
 
@@ -241,6 +245,10 @@ func (r *RawTensor) AsFloat64() []float64 {
 	// Trigger lazy realization if needed
 	data := r.Data()
 	//nolint:gosec // unsafe.Slice for zero-copy performance, bounds checked by NumElements()
+	if len(data) == 0 {
+		return nil
+	}
+	//nolint:gosec // pointer valid: len(data) > 0 checked above
 	return unsafe.Slice((*float64)(unsafe.Pointer(&data[0])), r.NumElements())
 }
 
@@ -254,6 +262,10 @@ func (r *RawTensor) AsInt32() []int32 {
 	// Trigger lazy realization if needed
 	data := r.Data()
 	//nolint:gosec // unsafe.Slice for zero-copy performance, bounds checked by NumElements()
+	if len(data) == 0 {
+		return nil
+	}
+	//nolint:gosec // pointer valid: len(data) > 0 checked above
 	return unsafe.Slice((*int32)(unsafe.Pointer(&data[0])), r.NumElements())
 }
 
@@ -267,6 +279,10 @@ func (r *RawTensor) AsInt64() []int64 {
 	// Trigger lazy realization if needed
 	data := r.Data()
 	//nolint:gosec // unsafe.Slice for zero-copy performance, bounds checked by NumElements()
+	if len(data) == 0 {
+		return nil
+	}
+	//nolint:gosec // pointer valid: len(data) > 0 checked above
 	return unsafe.Slice((*int64)(unsafe.Pointer(&data[0])), r.NumElements())
 }
 
@@ -291,6 +307,10 @@ func (r *RawTensor) AsBool() []bool {
 	// Trigger lazy realization if needed
 	data := r.Data()
 	//nolint:gosec // unsafe.Slice for zero-copy performance, bounds checked by NumElements()
+	if len(data) == 0 {
+		return nil
+	}
+	//nolint:gosec // pointer valid: len(data) > 0 checked above
 	return unsafe.Slice((*bool)(unsafe.Pointer(&data[0])), r.NumElements())
 }
 

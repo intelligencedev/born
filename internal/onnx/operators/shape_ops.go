@@ -4,8 +4,9 @@ package operators
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerShapeOps adds shape manipulation operators to the registry.
@@ -191,6 +192,10 @@ func handleSlice(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 		steps = inputs[4].AsInt64()
 	}
 
+	if bornSliceDebug {
+		fmt.Printf("SLICE in=%v starts=%v ends=%v axes=%v steps=%v\n", inputs[0].Shape(), starts, ends, axes, steps)
+	}
+
 	result, err := tensor.Slice(inputs[0], starts, ends, axes, steps)
 	if err != nil {
 		return nil, fmt.Errorf("slice: %w", err)
@@ -238,9 +243,19 @@ func handleExpand(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Ra
 		targetShape[i] = int(v)
 	}
 
-	result, err := tensor.Expand(inputs[0], targetShape)
+	// ONNX Expand broadcasts the input against the target shape (bidirectional),
+	// so a target dim of 1 keeps the input's (possibly larger) dim.
+	outShape, err := onnxBroadcastShape(inputs[0].Shape(), targetShape)
+	if err != nil {
+		return nil, fmt.Errorf("expand: %w", err)
+	}
+
+	result, err := tensor.Expand(inputs[0], outShape)
 	if err != nil {
 		return nil, fmt.Errorf("expand: %w", err)
 	}
 	return []*tensor.RawTensor{result}, nil
 }
+
+//nolint:gochecknoglobals // debug flag
+var bornSliceDebug = os.Getenv("BORN_SLICE_DEBUG") != ""

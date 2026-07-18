@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
 	_ "github.com/gogpu/wgpu/hal/allbackends"

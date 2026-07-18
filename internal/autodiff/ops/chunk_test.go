@@ -3,8 +3,8 @@ package ops
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestChunkOp_BackwardMulti_Simple tests basic chunk backward with BackwardMulti.

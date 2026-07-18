@@ -3,7 +3,7 @@ package cpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // refFlatIndex is an independent, closed-form oracle for the broadcast source

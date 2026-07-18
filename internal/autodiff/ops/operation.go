@@ -13,7 +13,7 @@
 //   - ReLUOp: rectified linear unit activation (d(ReLU(x))/dx = 1 if x > 0, else 0)
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // Operation represents a differentiable operation in the computation graph.
 // Each operation records its inputs and output during the forward pass,

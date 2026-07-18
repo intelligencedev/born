@@ -3,7 +3,7 @@ package autodiff
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // BackwardCapable is an interface for backends that support backward pass.

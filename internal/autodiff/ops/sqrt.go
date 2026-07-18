@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // SqrtOp represents the square root operation: y = sqrt(x).
 //

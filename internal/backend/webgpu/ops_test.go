@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Helper to create a float32 tensor with given data.

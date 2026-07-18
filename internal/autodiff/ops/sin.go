@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // SinOp represents the sine operation: y = sin(x).
 //

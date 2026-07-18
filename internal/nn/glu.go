@@ -3,7 +3,7 @@ package nn
 import (
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SiLUFunc applies SiLU (Swish) activation: f(x) = x * sigmoid(x).

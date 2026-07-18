@@ -8,9 +8,9 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/born-ml/born/internal/nn"
-	"github.com/born-ml/born/internal/serialization"
-	"github.com/born-ml/born/tensor"
+	"github.com/intelligencedev/born/internal/nn"
+	"github.com/intelligencedev/born/internal/serialization"
+	"github.com/intelligencedev/born/tensor"
 )
 
 // Module is the base interface for all neural network components.

@@ -5,8 +5,8 @@ package onnx
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/onnx/operators"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/onnx/operators"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // LoadOptions configures model loading behavior.

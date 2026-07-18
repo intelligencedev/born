@@ -3,7 +3,7 @@ package cpu
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // ScatterAdd performs a general scatter-add: the inverse of Gather.

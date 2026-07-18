@@ -1,7 +1,7 @@
 package nn
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // LayerNorm applies Layer Normalization over an input tensor along the last dimension.

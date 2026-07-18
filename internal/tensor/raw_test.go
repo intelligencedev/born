@@ -133,10 +133,15 @@ func TestNewRawAllTypes(t *testing.T) {
 // RawTensor Invalid Creation Tests
 
 func TestNewRawInvalidShape(t *testing.T) {
+	// Zero-sized dims allocate empty tensors (ONNX allows them); only negative fails.
+	for _, shape := range []Shape{{0}, {2, 0}} {
+		if _, err := NewRaw(shape, Float32, CPU); err != nil {
+			t.Errorf("NewRaw(%v) should allocate an empty tensor but failed: %v", shape, err)
+		}
+	}
+
 	invalidShapes := []Shape{
-		{0},
 		{-1},
-		{2, 0},
 		{2, -3},
 	}
 

@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // MatMulOp represents a matrix multiplication operation: output = a @ b.
 //

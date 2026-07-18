@@ -29,7 +29,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/born-ml/born/internal/tolerance"
+	"github.com/intelligencedev/born/internal/tolerance"
 )
 
 // f32SeedOptions is a set of "interesting" values to be picked

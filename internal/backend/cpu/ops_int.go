@@ -1,7 +1,7 @@
 package cpu
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Int32 operations

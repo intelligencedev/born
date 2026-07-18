@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 type signTestCase[T uint8 | int32 | int64 | float32 | float64] struct {

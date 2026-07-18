@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // newFloat32Raw creates a CPU float32 RawTensor from a flat slice.

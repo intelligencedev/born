@@ -3,7 +3,7 @@ package ops
 import (
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // LogOp represents element-wise natural logarithm operation.

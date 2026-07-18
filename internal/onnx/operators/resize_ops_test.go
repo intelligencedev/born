@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func makeResizeInput(t *testing.T, shape tensor.Shape, data []float32) *tensor.RawTensor {

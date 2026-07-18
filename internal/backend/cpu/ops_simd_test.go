@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/born-ml/born/internal/tolerance"
+	"github.com/intelligencedev/born/internal/tolerance"
 )
 
 // simdTestSliceLengths is a set of slice lengths to test element-wise SIMD operations on.

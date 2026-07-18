@@ -7,8 +7,8 @@ package tensor_test
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/tensor"
 )
 
 // TestBackendInterface verifies that cpu.CPUBackend implements tensor.Backend.

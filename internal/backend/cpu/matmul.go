@@ -3,7 +3,7 @@ package cpu
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Block sizes tuned to fit within L1 cache.

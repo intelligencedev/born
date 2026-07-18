@@ -4,7 +4,7 @@
 
 package tensor
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // Backend defines the interface that all compute backends must implement.
 // Backends handle the actual computation for tensor operations.
@@ -22,8 +22,8 @@ import "github.com/born-ml/born/internal/tensor"
 // Example:
 //
 //	import (
-//	    "github.com/born-ml/born/tensor"
-//	    "github.com/born-ml/born/backend/cpu"
+//	    "github.com/intelligencedev/born/tensor"
+//	    "github.com/intelligencedev/born/backend/cpu"
 //	)
 //
 //	backend := cpu.New()

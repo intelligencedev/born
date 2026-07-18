@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/born-ml/born/internal/nn"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/nn"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // MNISTNet is a simple fully-connected neural network for MNIST classification.

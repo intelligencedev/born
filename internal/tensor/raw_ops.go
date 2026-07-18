@@ -455,9 +455,9 @@ func Reshape(x *RawTensor, newShape Shape) (*RawTensor, error) {
 				return nil, fmt.Errorf("Reshape: can only have one -1 dimension")
 			}
 			inferIdx = i
-		case dim <= 0:
-			return nil, fmt.Errorf("Reshape: dimensions must be positive, got %d", dim)
-		default:
+		case dim < 0:
+			return nil, fmt.Errorf("Reshape: dimensions must be >= 0 or -1, got %d", dim)
+		default: // includes literal 0 (empty dimension)
 			product *= dim
 		}
 	}

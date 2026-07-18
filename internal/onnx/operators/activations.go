@@ -5,7 +5,7 @@ package operators
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerActivations adds activation operators to the registry.
@@ -127,6 +127,13 @@ func handleSilu(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawT
 func handleClip(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 {
 		return nil, fmt.Errorf("clip requires at least 1 input, got %d", len(inputs))
+	}
+
+	// ONNX Clip is defined for numeric types; the Supertonic graphs clip int64
+	// length/index tensors. Born's tensor.Clip is float32-only, so handle int64
+	// directly here.
+	if inputs[0] != nil && inputs[0].DType() == tensor.Int64 {
+		return clipInt64(inputs)
 	}
 
 	// ONNX 11+: min and max are inputs, not attributes

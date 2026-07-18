@@ -5,7 +5,7 @@ package operators
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerComparisonOps adds comparison operators to the registry.

@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SiLUOp represents the SiLU (Swish) activation operation: y = x * sigmoid(x).

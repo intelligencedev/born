@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestBatchMatMul_3D_Basic tests basic 3D batch matmul.

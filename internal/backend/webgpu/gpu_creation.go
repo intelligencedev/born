@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"unsafe"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 )
 

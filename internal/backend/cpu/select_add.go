@@ -3,7 +3,7 @@ package cpu
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SelectAdd performs a scatter-add along the specified dimension.

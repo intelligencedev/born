@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 	wgpu "github.com/gogpu/wgpu"
 )
 

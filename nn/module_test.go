@@ -9,11 +9,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/serialization"
-	"github.com/born-ml/born/internal/tensor"
-	"github.com/born-ml/born/internal/tolerance"
-	"github.com/born-ml/born/nn"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/serialization"
+	"github.com/intelligencedev/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tolerance"
+	"github.com/intelligencedev/born/nn"
 )
 
 // TestModuleInterface verifies that concrete types implement Module interface.

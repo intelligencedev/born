@@ -1,7 +1,7 @@
 package nn
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // MSELoss computes Mean Squared Error loss.

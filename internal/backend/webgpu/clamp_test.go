@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func runClampTest(t *testing.T, backend *Backend, name string, input, expected []float32, shape tensor.Shape, minValue, maxValue float32) {

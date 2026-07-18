@@ -1,8 +1,8 @@
 package autodiff
 
 import (
-	"github.com/born-ml/born/internal/autodiff/ops"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/autodiff/ops"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // GradientTape records operations during the forward pass and computes

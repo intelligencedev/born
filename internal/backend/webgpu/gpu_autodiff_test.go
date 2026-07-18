@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestGPUTapeRecord tests that operations are recorded correctly.

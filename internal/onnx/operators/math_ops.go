@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerMathOps adds math operators to the registry.
@@ -39,8 +39,11 @@ func handlePow(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTe
 		return nil, fmt.Errorf("pow: nil input")
 	}
 	base := inputs[0]
+	if base.DType() == tensor.Int64 && inputs[1].DType() == tensor.Int64 {
+		return powInt64(base, inputs[1])
+	}
 	if base.DType() != tensor.Float32 || inputs[1].DType() != tensor.Float32 {
-		return nil, fmt.Errorf("pow: only float32 supported, got base=%s exp=%s", base.DType(), inputs[1].DType())
+		return nil, fmt.Errorf("pow: only float32/int64 supported, got base=%s exp=%s", base.DType(), inputs[1].DType())
 	}
 	if base.NumElements() == 0 {
 		return nil, fmt.Errorf("pow: empty base tensor")

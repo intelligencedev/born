@@ -3,8 +3,8 @@ package onnx_test
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
-	"github.com/born-ml/born/onnx"
+	"github.com/intelligencedev/born/internal/tensor"
+	"github.com/intelligencedev/born/onnx"
 )
 
 // mockModel implements the onnx.Model interface for testing.

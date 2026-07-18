@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // ReLUOp represents a ReLU (Rectified Linear Unit) activation: output = max(0, x).

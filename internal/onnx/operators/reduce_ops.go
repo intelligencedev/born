@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerReduceOps registers ONNX reduction operators.
@@ -22,6 +22,7 @@ const (
 	reduceMean reduceKind = iota
 	reduceMax
 	reduceMin
+	reduceSum
 )
 
 func handleReduceMean(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
@@ -219,7 +220,7 @@ func initReduceAcc(acc []float32, kind reduceKind) {
 
 func reduceStep(acc []float32, oi int, v float32, kind reduceKind) {
 	switch kind {
-	case reduceMean:
+	case reduceMean, reduceSum:
 		acc[oi] += v
 	case reduceMax:
 		if v > acc[oi] {

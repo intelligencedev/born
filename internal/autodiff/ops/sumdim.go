@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // SumDimOp represents a reduction sum operation along a dimension: output = sum(x, dim).
 //

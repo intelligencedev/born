@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/born-ml/born/internal/tolerance"
+	"github.com/intelligencedev/born/internal/tolerance"
 )
 
 // simdBenchmarkSizes is a set of slice lengths to benchmark SIMD operations against.

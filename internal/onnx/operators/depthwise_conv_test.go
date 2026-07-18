@@ -5,8 +5,8 @@ package operators
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // naiveDepthwise is an independent reference: explicit-index depthwise conv with

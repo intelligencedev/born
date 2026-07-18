@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // MeanDimOp represents a reduction mean operation along a dimension: output = mean(x, dim).
 //

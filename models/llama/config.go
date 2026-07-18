@@ -22,7 +22,7 @@
 package llama
 
 import (
-	"github.com/born-ml/born/internal/gguf"
+	"github.com/intelligencedev/born/internal/gguf"
 )
 
 // Config holds the hyperparameters for a LLaMA model.

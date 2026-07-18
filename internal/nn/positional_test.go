@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // equalShape compares two shapes for equality.

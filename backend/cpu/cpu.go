@@ -5,8 +5,8 @@
 package cpu
 
 import (
-	internalcpu "github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/tensor"
+	internalcpu "github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/tensor"
 )
 
 // Backend represents the CPU backend implementation.
@@ -23,8 +23,8 @@ var _ tensor.Backend = (*Backend)(nil)
 // Example:
 //
 //	import (
-//	    "github.com/born-ml/born/backend/cpu"
-//	    "github.com/born-ml/born/tensor"
+//	    "github.com/intelligencedev/born/backend/cpu"
+//	    "github.com/intelligencedev/born/tensor"
 //	)
 //
 //	func main() {

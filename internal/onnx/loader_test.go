@@ -5,7 +5,7 @@ package onnx
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func TestListSupportedOps(t *testing.T) {

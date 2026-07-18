@@ -3,7 +3,7 @@ package ops
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestTransposeOp_BackwardPropagatesGradients tests that TransposeOp correctly

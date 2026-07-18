@@ -7,7 +7,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SafeTensorsWriter writes models in SafeTensors format.

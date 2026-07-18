@@ -3,7 +3,7 @@ package serialization
 import (
 	"time"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Format constants.

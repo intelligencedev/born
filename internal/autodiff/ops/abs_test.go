@@ -4,9 +4,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/autodiff/ops"
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/autodiff/ops"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func TestAbs_ForwardFloat64(t *testing.T) {

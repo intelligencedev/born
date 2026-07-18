@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/born-ml/born/internal/tensor"
-	"github.com/born-ml/born/internal/tokenizer"
+	"github.com/intelligencedev/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tokenizer"
 )
 
 // GenerateConfig configures text generation.

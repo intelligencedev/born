@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/born-ml/born/internal/tolerance"
+	"github.com/intelligencedev/born/internal/tolerance"
 )
 
 type reluTestCase[T float32 | float64] struct {

@@ -17,11 +17,13 @@ func (s Shape) NumElements() int {
 	return n
 }
 
-// Validate checks if the shape is valid (all dimensions > 0).
+// Validate checks if the shape is valid (all dimensions >= 0). Zero-sized
+// dimensions are permitted: ONNX allows empty tensors (e.g. ConstantOfShape([0])
+// as a Concat seed in attention), and they must flow through the graph.
 func (s Shape) Validate() error {
 	for i, dim := range s {
-		if dim <= 0 {
-			return fmt.Errorf("invalid dimension at index %d: %d (must be > 0)", i, dim)
+		if dim < 0 {
+			return fmt.Errorf("invalid dimension at index %d: %d (must be >= 0)", i, dim)
 		}
 	}
 	return nil

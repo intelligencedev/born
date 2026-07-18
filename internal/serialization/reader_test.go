@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // writeTestBorn encodes the shared test state dict to a v1 .born byte slice.

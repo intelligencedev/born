@@ -5,7 +5,7 @@ package operators
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestConv_Group1MultiChannelSpatial covers the stem-conv shape class: a

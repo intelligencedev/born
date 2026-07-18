@@ -19,7 +19,7 @@
 package tensor
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Type aliases for public API

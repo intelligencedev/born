@@ -4,7 +4,7 @@ import (
 	"log"
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // ErfOp represents an element-wise error function operation: output = erf(a).

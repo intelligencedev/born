@@ -3,7 +3,7 @@ package ops
 import (
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // buildOneHotIdentity creates a float identity matrix of shape [n, n] in the given dtype.

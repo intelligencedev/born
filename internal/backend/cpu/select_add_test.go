@@ -3,7 +3,7 @@ package cpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // newFloat32Tensor creates a float32 tensor on CPU with the given shape and data.

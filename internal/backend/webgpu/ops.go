@@ -5,7 +5,7 @@ package webgpu
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Add performs element-wise addition on GPU.

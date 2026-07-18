@@ -4,14 +4,80 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // batchParallelThreshold is the minimum batch size before parallelising across goroutines.
 // Below this threshold the goroutine-spawn overhead exceeds the compute savings.
 // Empirical value from GoMLX; revisit with project benchmarks.
 const batchParallelThreshold = 4
+
+// bmmParallelWorkThreshold is the minimum total multiply-accumulate count before
+// the row-splitting parallel path is worth its goroutine overhead.
+const bmmParallelWorkThreshold = 1 << 15
+
+// bmmMinRowsPerChunk keeps row chunks large enough that each job amortizes its
+// spawn cost and matmulFloat32's blocking still has room to work.
+const bmmMinRowsPerChunk = 16
+
+type bmmJob struct{ batch, r0, r1 int }
+
+// bmmParallelF32 runs a batched float32 matmul as (batch × row-chunk) jobs on a
+// worker pool. Small batch counts (e.g. 4 attention heads) previously ran fully
+// serial because parallelism was only ever across whole batches; splitting rows
+// lets a batch=4 attention matmul use every core. Row slices of row-major C/A
+// are themselves valid matmuls, and each job's C rows are disjoint, so this is
+// race-free. aOff/bOff map a batch index to its (possibly broadcast) operand
+// offset. Returns false when the work is too small to beat the serial loop.
+func bmmParallelF32(c, a, b []float32, totalBatches, m, k, n int, aOff, bOff func(batch int) int) bool {
+	if totalBatches*m*k*n < bmmParallelWorkThreshold {
+		return false
+	}
+	workers := runtime.NumCPU()
+	rowChunks := (workers*2 + totalBatches - 1) / totalBatches
+	if maxChunks := (m + bmmMinRowsPerChunk - 1) / bmmMinRowsPerChunk; rowChunks > maxChunks {
+		rowChunks = maxChunks
+	}
+	if rowChunks < 1 {
+		rowChunks = 1
+	}
+	chunk := (m + rowChunks - 1) / rowChunks
+	jobs := make([]bmmJob, 0, totalBatches*rowChunks)
+	for bi := 0; bi < totalBatches; bi++ {
+		for r := 0; r < m; r += chunk {
+			jobs = append(jobs, bmmJob{bi, r, min(r+chunk, m)})
+		}
+	}
+	if len(jobs) <= 1 {
+		return false
+	}
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+	matrixSizeC := m * n
+	var cursor atomic.Int64
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				idx := int(cursor.Add(1)) - 1
+				if idx >= len(jobs) {
+					return
+				}
+				j := jobs[idx]
+				rows := j.r1 - j.r0
+				off := j.batch*matrixSizeC + j.r0*n
+				matmulFloat32(c[off:off+rows*n], a[aOff(j.batch)+j.r0*k:], b[bOff(j.batch):], rows, k, n)
+			}
+		}()
+	}
+	wg.Wait()
+	return true
+}
 
 // BatchMatMul performs batched matrix multiplication with numpy-style broadcasting.
 // Supports tensors with 2 or more dimensions. At least one input must be 3D or higher.
@@ -107,6 +173,12 @@ func batchMatmulFloat32(c, a, b []float32, batchSize, m, k, n int) {
 	matrixSizeB := k * n
 	matrixSizeC := m * n
 
+	if bmmParallelF32(c, a, b, batchSize, m, k, n,
+		func(batch int) int { return batch * matrixSizeA },
+		func(batch int) int { return batch * matrixSizeB }) {
+		return
+	}
+
 	if batchSize <= batchParallelThreshold {
 		for batch := range batchSize {
 			off := batch * matrixSizeC
@@ -199,6 +271,15 @@ func batchMatmulBroadcastFloat32(
 	matrixSizeC := m * n
 
 	totalBatches := outBatchShape.NumElements()
+	if bmmParallelF32(c, a, b, totalBatches, m, k, n,
+		func(batch int) int {
+			return computeFlatIndex(batch, outBatchStrides, aBroadcastStrides) * matrixSizeA
+		},
+		func(batch int) int {
+			return computeFlatIndex(batch, outBatchStrides, bBroadcastStrides) * matrixSizeB
+		}) {
+		return
+	}
 	if totalBatches <= batchParallelThreshold {
 		for batchIdx := range totalBatches {
 			aBatchFlat := computeFlatIndex(batchIdx, outBatchStrides, aBroadcastStrides)

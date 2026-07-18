@@ -4,10 +4,13 @@ package onnx
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/born-ml/born/internal/onnx/operators"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/onnx/operators"
+	"github.com/intelligencedev/born/internal/tensor"
 )
+
+var bornTrace = os.Getenv("BORN_TRACE") != ""
 
 // Model represents a loaded ONNX model ready for inference.
 // It executes the computation graph using the provided backend.
@@ -75,13 +78,27 @@ func (m *Model) Forward(input *tensor.RawTensor) (*tensor.RawTensor, error) {
 //
 //nolint:gocognit // ForwardNamed orchestrates the full inference pipeline.
 func (m *Model) ForwardNamed(inputs map[string]*tensor.RawTensor) (map[string]*tensor.RawTensor, error) {
-	// Copy weights and set inputs
+	// Copy weights and set inputs.
+	//
+	// put() protects every tensor placed in the map from in-place mutation:
+	// operators use an inplace fast path when a buffer looks unique (refCount==1),
+	// but a graph tensor held only by this map is *not* safe to mutate — later
+	// nodes still read it. Bumping the refcount forces those ops to copy instead,
+	// preventing buffer-aliasing corruption (e.g. an op overwriting a value that a
+	// subsequent Unsqueeze/Slice still needs). The extra ref is never released:
+	// buffers are Go-GC'd, so this only disables the inplace optimization.
 	tensors := make(map[string]*tensor.RawTensor)
-	for name, t := range m.tensors {
+	put := func(name string, t *tensor.RawTensor) {
+		if t != nil {
+			t.ForceNonUnique()
+		}
 		tensors[name] = t
 	}
+	for name, t := range m.tensors {
+		put(name, t)
+	}
 	for name, t := range inputs {
-		tensors[name] = t
+		put(name, t)
 	}
 
 	// Validate all inputs are provided
@@ -120,10 +137,23 @@ func (m *Model) ForwardNamed(inputs map[string]*tensor.RawTensor) (map[string]*t
 			return nil, fmt.Errorf("node %s (%s): %w", node.Name, node.OpType, err)
 		}
 
-		// Store outputs
+		// Store outputs (protected from later in-place mutation; see put()).
 		for i, outputName := range node.Outputs {
 			if i < len(outputs) {
-				tensors[outputName] = outputs[i]
+				put(outputName, outputs[i])
+			}
+		}
+
+		if bornTrace {
+			for i, outputName := range node.Outputs {
+				if i < len(outputs) && outputs[i] != nil {
+					o := outputs[i]
+					val := ""
+					if o.DType() == tensor.Int64 && o.NumElements() <= 64 {
+						val = fmt.Sprintf("%v", o.AsInt64())
+					}
+					fmt.Printf("TRACE %s\t%s\t%v\t%s\n", node.OpType, outputName, o.Shape(), val)
+				}
 			}
 		}
 	}

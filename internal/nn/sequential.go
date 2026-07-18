@@ -3,7 +3,7 @@ package nn
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Sequential is a container module that chains multiple modules together.

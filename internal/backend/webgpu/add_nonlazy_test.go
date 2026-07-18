@@ -3,7 +3,7 @@
 package webgpu
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 	"testing"
 )
 

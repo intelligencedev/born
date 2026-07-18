@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Helper to create test backend.
@@ -1653,7 +1653,7 @@ func TestCPUBackend_SiLU(t *testing.T) {
 
 // TestSelfOperandAliasing verifies that binary ops with the same tensor as both
 // operands (e.g. Mul(x, x)) do not mutate the input.
-// Regression test for https://github.com/born-ml/born/issues/45
+// Regression test for https://github.com/intelligencedev/born/issues/45
 func TestSelfOperandAliasing(t *testing.T) {
 	backend := newTestBackend()
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SinusoidalPositionalEncoding implements fixed sinusoidal positional encodings.

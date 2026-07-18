@@ -3,7 +3,7 @@ package ops
 import (
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SoftmaxOp represents the softmax operation along a specified dimension.

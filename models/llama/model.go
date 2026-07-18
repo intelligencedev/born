@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/born-ml/born/internal/generate"
-	"github.com/born-ml/born/internal/nn"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/generate"
+	"github.com/intelligencedev/born/internal/nn"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // AttentionFunc is a function that computes scaled-dot-product attention.

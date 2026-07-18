@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // CPUBackend implements tensor operations on CPU with optional SIMD and BLAS optimizations.

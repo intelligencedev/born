@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SafeTensors format:

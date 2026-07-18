@@ -6,8 +6,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func poolTensor(t *testing.T, shape tensor.Shape, data []float32) *tensor.RawTensor {

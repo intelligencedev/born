@@ -3,8 +3,8 @@ package ops
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/backend/cpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/backend/cpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestMaxPool2DOp_BackwardGradients tests MaxPool2D backward pass gradients.

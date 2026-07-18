@@ -21,9 +21,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/born-ml/born/backend/cpu"
-	"github.com/born-ml/born/internal/backend/webgpu"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/backend/cpu"
+	"github.com/intelligencedev/born/internal/backend/webgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func main() {

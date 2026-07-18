@@ -3,7 +3,7 @@ package cpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestMaxPool2D_BasicForward tests basic max pooling correctness.

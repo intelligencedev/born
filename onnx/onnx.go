@@ -16,9 +16,9 @@
 // # Example Usage
 //
 //	import (
-//	    "github.com/born-ml/born/onnx"
-//	    "github.com/born-ml/born/backend/cpu"
-//	    "github.com/born-ml/born/tensor"
+//	    "github.com/intelligencedev/born/onnx"
+//	    "github.com/intelligencedev/born/backend/cpu"
+//	    "github.com/intelligencedev/born/tensor"
 //	)
 //
 //	// Load ONNX model
@@ -55,8 +55,8 @@
 package onnx
 
 import (
-	internalonnx "github.com/born-ml/born/internal/onnx"
-	"github.com/born-ml/born/internal/tensor"
+	internalonnx "github.com/intelligencedev/born/internal/onnx"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // LoadOptions configures ONNX model loading behavior.

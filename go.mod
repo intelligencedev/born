@@ -1,4 +1,4 @@
-module github.com/born-ml/born
+module github.com/intelligencedev/born
 
 go 1.26.0
 

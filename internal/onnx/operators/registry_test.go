@@ -5,7 +5,7 @@ package operators
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 func TestNewRegistry(t *testing.T) {

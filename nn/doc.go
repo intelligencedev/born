@@ -16,8 +16,8 @@
 // # Basic Usage
 //
 //	import (
-//	    "github.com/born-ml/born/nn"
-//	    "github.com/born-ml/born/backend/cpu"
+//	    "github.com/intelligencedev/born/nn"
+//	    "github.com/intelligencedev/born/backend/cpu"
 //	)
 //
 //	func main() {

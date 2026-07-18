@@ -113,9 +113,14 @@ func TestShapeValidation(t *testing.T) {
 		}
 	}
 
+	// Zero-sized dims are valid (empty tensors, per ONNX). Only negative fails.
+	for _, s := range []Shape{{0}, {3, 0}} {
+		if err := s.Validate(); err != nil {
+			t.Errorf("Shape%v.Validate() should pass (empty tensor) but failed: %v", s, err)
+		}
+	}
+
 	invalidShapes := []Shape{
-		{0},
-		{3, 0},
 		{-1},
 		{3, -4},
 	}

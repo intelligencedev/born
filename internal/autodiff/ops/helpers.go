@@ -3,7 +3,7 @@ package ops
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // typedScalar returns a Go value matching the tensor dtype for use with backend scalar ops.

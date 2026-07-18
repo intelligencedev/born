@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestLazyModeAdd tests that lazy mode doesn't call readBuffer during Add.

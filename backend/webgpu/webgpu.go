@@ -15,9 +15,9 @@
 // Example:
 //
 //	import (
-//	    "github.com/born-ml/born/autodiff"
-//	    "github.com/born-ml/born/backend/webgpu"
-//	    "github.com/born-ml/born/tensor"
+//	    "github.com/intelligencedev/born/autodiff"
+//	    "github.com/intelligencedev/born/backend/webgpu"
+//	    "github.com/intelligencedev/born/tensor"
 //	)
 //
 //	func main() {
@@ -33,8 +33,8 @@
 package webgpu
 
 import (
-	internalwebgpu "github.com/born-ml/born/internal/backend/webgpu"
-	"github.com/born-ml/born/tensor"
+	internalwebgpu "github.com/intelligencedev/born/internal/backend/webgpu"
+	"github.com/intelligencedev/born/tensor"
 )
 
 // Backend represents the WebGPU backend implementation for GPU-accelerated

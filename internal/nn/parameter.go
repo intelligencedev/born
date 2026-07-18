@@ -1,7 +1,7 @@
 package nn
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Parameter represents a trainable parameter in a neural network.

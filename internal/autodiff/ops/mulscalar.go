@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // MulScalarOp represents element-wise multiplication by a scalar: output = x * s.
 //

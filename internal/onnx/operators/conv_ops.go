@@ -5,7 +5,7 @@ package operators
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerConvOps registers the ONNX Conv operator.
@@ -33,6 +33,11 @@ func (p convParams) hasPad() bool {
 // output channels. Unsupported attributes (auto_pad=SAME_*, dilations>1,
 // non-square strides) are rejected rather than silently producing wrong output.
 func handleConv(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	// Conv1d (3D NCL input) is handled by a dedicated path; Born's base Conv is
+	// 2D-only and does not support dilation, which the Supertonic graphs need.
+	if len(inputs) >= 1 && inputs[0] != nil && len(inputs[0].Shape()) == 3 {
+		return handleConv1D(node, inputs)
+	}
 	x, w, err := convInputs(inputs)
 	if err != nil {
 		return nil, err

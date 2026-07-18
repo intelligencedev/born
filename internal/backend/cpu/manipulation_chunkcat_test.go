@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // fillSeqTyped fills x with deterministic, dtype-valid values via its typed view

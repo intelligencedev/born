@@ -3,7 +3,7 @@ package nn
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TransformerConfig defines the configuration for a Transformer Block.

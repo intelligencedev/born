@@ -3,7 +3,7 @@ package serialization
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestDtypeRoundTrip verifies that every supported dtype survives a

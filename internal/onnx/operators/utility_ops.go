@@ -5,7 +5,7 @@ package operators
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // registerUtilityOps adds utility operators to the registry.
@@ -121,21 +121,54 @@ func handleConstantOfShape(_ *Context, node *Node, inputs []*tensor.RawTensor) (
 		targetShape[i] = int(v)
 	}
 
-	// Get value from attribute (default: 0.0f)
-	var value float32
+	// The "value" attribute is a scalar tensor whose dtype determines the output
+	// dtype (default: float32 0). Honoring int64 here is required by the
+	// Supertonic graphs, which build shape vectors via ConstantOfShape + int Mul.
+	dtype := tensor.Float32
+	var valTensor *tensor.RawTensor
 	for i := range node.Attributes {
-		if node.Attributes[i].Name == "value" {
-			// value is a TensorProto with single element
-			if len(node.Attributes[i].Floats) > 0 {
-				value = node.Attributes[i].Floats[0]
-			}
+		if node.Attributes[i].Name == "value" && node.Attributes[i].T != nil {
+			valTensor = node.Attributes[i].T
+			dtype = valTensor.DType()
 			break
 		}
 	}
 
-	result, err := tensor.FullRaw(targetShape, value, tensor.Float32, tensor.CPU)
+	result, err := tensor.NewRaw(targetShape, dtype, tensor.CPU)
 	if err != nil {
 		return nil, fmt.Errorf("constantOfShape: %w", err)
+	}
+	hasVal := valTensor != nil && valTensor.NumElements() > 0
+	switch dtype {
+	case tensor.Float32:
+		var v float32
+		if hasVal {
+			v = valTensor.AsFloat32()[0]
+		}
+		out := result.AsFloat32()
+		for i := range out {
+			out[i] = v
+		}
+	case tensor.Int64:
+		var v int64
+		if hasVal {
+			v = valTensor.AsInt64()[0]
+		}
+		out := result.AsInt64()
+		for i := range out {
+			out[i] = v
+		}
+	case tensor.Int32:
+		var v int32
+		if hasVal {
+			v = valTensor.AsInt32()[0]
+		}
+		out := result.AsInt32()
+		for i := range out {
+			out[i] = v
+		}
+	default:
+		return nil, fmt.Errorf("constantOfShape: unsupported dtype %s", dtype)
 	}
 	return []*tensor.RawTensor{result}, nil
 }

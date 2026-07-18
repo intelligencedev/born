@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 const bornVersion = "0.5.4" // Current Born version

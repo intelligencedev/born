@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // SigmoidOp represents the sigmoid activation operation: σ(x) = 1 / (1 + exp(-x)).

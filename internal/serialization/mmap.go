@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // MmapReader provides memory-mapped access to .born files.

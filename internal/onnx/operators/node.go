@@ -3,7 +3,7 @@
 // Package operators provides ONNX operator implementations.
 package operators
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // ONNX data types (TensorProto.DataType).
 const (

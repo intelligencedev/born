@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // BornReader reads models from .born format.

@@ -10,7 +10,7 @@
 //
 // Example usage:
 //
-//	import "github.com/born-ml/born/tokenizer"
+//	import "github.com/intelligencedev/born/tokenizer"
 //
 //	// Load tiktoken
 //	tok, err := tokenizer.NewTikToken("cl100k_base")
@@ -40,7 +40,7 @@
 package tokenizer
 
 import (
-	"github.com/born-ml/born/internal/tokenizer"
+	"github.com/intelligencedev/born/internal/tokenizer"
 )
 
 // Tokenizer is the core interface for text tokenization.

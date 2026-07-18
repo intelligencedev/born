@@ -1,7 +1,7 @@
 package nn
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // FFN implements a Feed-Forward Network (also called MLP - Multi-Layer Perceptron).

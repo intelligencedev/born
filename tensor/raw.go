@@ -5,7 +5,7 @@
 package tensor
 
 import (
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // RawTensor is the low-level tensor representation.

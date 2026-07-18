@@ -5,7 +5,7 @@ package webgpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestAutoFlush_ManyOpsWithoutReadback verifies that GPU does not crash

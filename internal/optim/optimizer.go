@@ -31,8 +31,8 @@
 package optim
 
 import (
-	"github.com/born-ml/born/internal/nn"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/nn"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // Optimizer is the base interface for all optimization algorithms.

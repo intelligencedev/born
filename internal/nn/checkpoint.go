@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/born-ml/born/internal/serialization"
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/serialization"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // OptimizerState represents an optimizer that can save/load its state.

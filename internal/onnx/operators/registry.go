@@ -5,7 +5,7 @@ package operators
 import (
 	"fmt"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // OpHandler processes an ONNX node and returns output tensors.
@@ -40,6 +40,7 @@ func NewRegistry() *Registry {
 	r.registerPoolOps()
 	r.registerConvOps()
 	r.registerResizeOps()
+	r.registerSupertonicOps()
 
 	return r
 }

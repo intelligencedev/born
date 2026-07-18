@@ -3,7 +3,7 @@ package cpu
 import (
 	"testing"
 
-	"github.com/born-ml/born/internal/tensor"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestGather1D tests gather on 1D tensors.

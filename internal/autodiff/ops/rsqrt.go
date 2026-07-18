@@ -1,6 +1,6 @@
 package ops
 
-import "github.com/born-ml/born/internal/tensor"
+import "github.com/intelligencedev/born/internal/tensor"
 
 // RsqrtOp represents the reciprocal square root operation: y = 1/sqrt(x).
 //
