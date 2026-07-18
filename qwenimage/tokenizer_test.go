@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/intelligencedev/born/tokenizer"
 )
 
 type tokenizerCase struct {
@@ -14,7 +12,7 @@ type tokenizerCase struct {
 	IDs  []int32 `json:"ids"`
 }
 
-// TestTokenizerParity checks born's HF tokenizer loader against transformers'
+// TestTokenizerParity checks the qwenimage tokenizer against transformers'
 // AutoTokenizer output for the Qwen3-VL vocabulary (fixture from
 // `harness.py dump-tokenizer-cases`). Token ids must match exactly — a single
 // divergent id shifts the whole text conditioning.
@@ -35,7 +33,7 @@ func TestTokenizerParity(t *testing.T) {
 		t.Fatal("no cases")
 	}
 
-	tok, err := tokenizer.LoadFromHuggingFace(tokPath)
+	tok, err := LoadTokenizer(tokPath)
 	if err != nil {
 		t.Fatalf("load tokenizer: %v", err)
 	}
@@ -46,15 +44,12 @@ func TestTokenizerParity(t *testing.T) {
 			name = name[:24]
 		}
 		t.Run(name, func(t *testing.T) {
-			got, err := tok.Encode(c.Text)
-			if err != nil {
-				t.Fatalf("encode: %v", err)
-			}
+			got := tok.Encode(c.Text)
 			if len(got) != len(c.IDs) {
 				t.Fatalf("token count mismatch: got %d %v want %d %v", len(got), got, len(c.IDs), c.IDs)
 			}
 			for i := range got {
-				if int32(got[i]) != c.IDs[i] {
+				if got[i] != c.IDs[i] {
 					t.Fatalf("id[%d] mismatch: got %d want %d (got=%v want=%v)", i, got[i], c.IDs[i], got, c.IDs)
 				}
 			}
