@@ -46,9 +46,12 @@ mlp_multiplier 4, theta 1000, norm_eps 1e-5, RoPE axes_dim {32,48,48} (sum 128).
   GQA 48q/12kv; RoPE applied via precomputed `pe`; **output gated:
   attn_out * sigmoid(gate(x))** before wo.
 - `KreaDoubleSharedModulation` (per block): learned 6*6144 vector added to shared
-  tvec, chunked into 6 mods. Block: x += attn(modulate(prenorm(x), mods[1], mods[0])) * mods[2];
-  x += mlp(modulate(postnorm(x), mods[4], mods[3])) * mods[5]. (`Flux::modulate(x, scale, shift)`
-  = x*(1+scale)+shift — verify exact arg order in flux.hpp during port.)
+  tvec, chunked into 6 mods. `Flux::modulate(ctx, x, shift, scale)` = x*(1+scale)+shift
+  (VERIFIED flux.hpp:413); krea2 passes (mods[1], mods[0]) so:
+  **mods[0]=scale1, mods[1]=shift1, mods[2]=gate1 (attn); mods[3]=scale2,
+  mods[4]=shift2, mods[5]=gate2 (mlp)**.
+  Block: x += attn(modulate(prenorm(x), shift1, scale1)) * gate1;
+  x += mlp(modulate(postnorm(x), shift2, scale2)) * gate2.
 - Timestep: `timestep_embedding(t, 256, max_period=10000, scale=1000)` → TimeMLP
   (Linear 256→6144, gelu, Linear 6144→6144, WITH bias) → `t`;
   tvec = TProj: gelu(t) → Linear 6144→36864 (bias).
@@ -64,8 +67,13 @@ mlp_multiplier 4, theta 1000, norm_eps 1e-5, RoPE axes_dim {32,48,48} (sum 128).
 - RoPE ids: FLUX-style — txt ids zeros (3 axes), img ids (0, y, x); theta 1000;
   `Rope::embed_nd` with axes {32,48,48}. (t2i only; ref_latents/image-edit path skipped.)
 
-**GELU variants:** TimeMLP/TProj use `ggml_ext_gelu(x, false)`, TextMLP uses
-`(x, true)` — check ggml_extend for which is tanh-approx vs erf; replicate exactly.
+**GELU:** the bool arg of `ggml_ext_gelu` is just `inplace` (VERIFIED
+ggml_extend.hpp:980) — TimeMLP/TProj/TextMLP all use ggml's default `ggml_gelu`,
+which is the **tanh approximation**. One GELU kernel needed.
+
+**RoPE img ids** (rope.hpp gen_flux_img_ids): h_len=(h+p/2)/p; per patch position
+ids = (0, y, x) over 3 axes; txt ids all zeros; `Rope::embed_nd(ids, bs, theta=1000,
+axes_dim={32,48,48})` builds the pe tensor consumed by `Rope::attention`.
 
 ## Text encoder / conditioner (from `conditioner.hpp` krea2 branch)
 
