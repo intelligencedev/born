@@ -154,6 +154,125 @@ def load_text_encoder(dtype=None):
     return model.eval()
 
 
+def krea2_text_inputs(prompt: str, max_sequence_length: int = 512):
+    """Replicates Krea2Pipeline.get_text_hidden_states tokenization exactly:
+    [prefix | prompt | PAD -> (msl + 34 - 5) | suffix(5)], bool mask,
+    cumulative-valid-token position ids broadcast over 3 mRoPE axes."""
+    import torch
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(str(MODELS / "tokenizer"))
+    prefix_idx = 34
+    text_tokens = tok(
+        [KREA2_SYSTEM_TEMPLATE + prompt],
+        truncation=True,
+        padding="max_length",
+        max_length=max_sequence_length + prefix_idx - 5,
+        return_tensors="pt",
+    )
+    suffix_tokens = tok(["<|im_end|>\n<|im_start|>assistant\n"], return_tensors="pt")
+    input_ids = torch.cat([text_tokens.input_ids, suffix_tokens.input_ids], dim=1)
+    attention_mask = torch.cat(
+        [text_tokens.attention_mask, suffix_tokens.attention_mask], dim=1
+    ).bool()
+    position_ids = (attention_mask.long().cumsum(dim=-1) - 1).clamp(min=0)
+    position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+    return input_ids, attention_mask, position_ids
+
+
+SELECT_LAYERS = (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35)
+
+
+def cmd_dump_text_encoder(_args) -> None:
+    """Full-weight text-encoder fixture: fox prompt -> (1, 512, 12, 2560)."""
+    import torch
+
+    model = load_text_encoder(torch.float32)
+    input_ids, attention_mask, position_ids = krea2_text_inputs(FOX_PROMPT)
+    with torch.no_grad():
+        out = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_hidden_states=True,
+        )
+    hidden = torch.stack([out.hidden_states[i] for i in SELECT_LAYERS], dim=2)
+    hidden = hidden[:, 34:]
+    mask = attention_mask[:, 34:]
+    dump("textenc.input_ids", input_ids.to(torch.float32))
+    dump("textenc.mask", mask.to(torch.float32))
+    dump("textenc.hidden", hidden)
+
+
+def cmd_dump_tiny_text_encoder(_args) -> None:
+    """Tiny random Qwen3 text model + IO fixture for the fast Go dev loop.
+    Weights are dumped under GGUF (llama.cpp) tensor names so the Go encoder
+    exercises the same loading path as the real Q8_0 file."""
+    import torch
+    from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLTextConfig
+    from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextModel
+
+    torch.manual_seed(7)
+    cfg = Qwen3VLTextConfig(
+        vocab_size=256,
+        hidden_size=64,
+        num_hidden_layers=3,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        intermediate_size=128,
+        rms_norm_eps=1e-6,
+        rope_theta=5_000_000.0,
+        rope_scaling={"rope_type": "default", "mrope_section": [6, 5, 5]},
+        attention_bias=False,
+        tie_word_embeddings=True,
+    )
+    model = Qwen3VLTextModel(cfg).eval()
+
+    hf2gguf = {
+        "embed_tokens.weight": "token_embd.weight",
+        "norm.weight": "output_norm.weight",
+    }
+    per_layer = {
+        "self_attn.q_proj.weight": "attn_q.weight",
+        "self_attn.k_proj.weight": "attn_k.weight",
+        "self_attn.v_proj.weight": "attn_v.weight",
+        "self_attn.o_proj.weight": "attn_output.weight",
+        "self_attn.q_norm.weight": "attn_q_norm.weight",
+        "self_attn.k_norm.weight": "attn_k_norm.weight",
+        "input_layernorm.weight": "attn_norm.weight",
+        "post_attention_layernorm.weight": "ffn_norm.weight",
+        "mlp.gate_proj.weight": "ffn_gate.weight",
+        "mlp.up_proj.weight": "ffn_up.weight",
+        "mlp.down_proj.weight": "ffn_down.weight",
+    }
+    for k, v in model.state_dict().items():
+        if k in hf2gguf:
+            dump("tinytextenc.w." + hf2gguf[k], v)
+        else:
+            parts = k.split(".")
+            assert parts[0] == "layers", k
+            dump(f"tinytextenc.w.blk.{parts[1]}." + per_layer[".".join(parts[2:])], v)
+
+    # IO: 12 tokens with 3 pads in the middle (exercises cumulative positions),
+    # taking hidden states from layers 1 and 2 (embeddings excluded).
+    input_ids = torch.tensor([[5, 9, 200, 13, 42, 7, 0, 0, 0, 99, 100, 101]])
+    attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1]]).bool()
+    position_ids = (attention_mask.long().cumsum(dim=-1) - 1).clamp(min=0)
+    position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+    with torch.no_grad():
+        out = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_hidden_states=True,
+        )
+    dump("tinytextenc.input_ids", input_ids.to(torch.float32))
+    dump("tinytextenc.mask", attention_mask.to(torch.float32))
+    dump("tinytextenc.hidden.l1", out.hidden_states[1])
+    dump("tinytextenc.hidden.l2", out.hidden_states[2])
+
+
 def load_transformer(dtype=None):
     """Krea2Transformer2DModel with weights from the SAME Q4_K_M GGUF born
     loads (Krea2 has no from_single_file GGUF path yet). Both sides store
@@ -202,7 +321,8 @@ def load_transformer(dtype=None):
             else:
                 sd[f"txt_in.linear_{'1' if idx == '1' else '2'}.{kind}"] = w
         elif name == "txtfusion.projector.weight":
-            sd["text_fusion.projector.weight"] = w
+            # GGUF stores the layer projector 1-D; diffusers Linear wants (1, 12).
+            sd["text_fusion.projector.weight"] = w.reshape(1, -1)
         elif name.startswith("txtfusion."):
             _, group, n, rest = name.split(".", 3)
             sd[f"text_fusion.{group}.{n}.{attn(rest)}"] = w
@@ -261,9 +381,10 @@ def cmd_e2e(args) -> None:
     import torch
 
     device = args.device
-    # bf16: the 12B DiT in f32 would be ~48 GB; self-validation only needs a
-    # recognizable image. Parity fixtures are dumped per-component in f32.
-    pipe = build_pipeline(device=device, dtype=torch.bfloat16)
+    # fp16: the 12B DiT in f32 would be ~48 GB (over budget with the encoder
+    # resident), and MPS rejects bf16 in some matmul kernels. Self-validation
+    # only needs a recognizable image; parity fixtures are per-component f32.
+    pipe = build_pipeline(device=device, dtype=torch.float16)
     gen = torch.Generator("cpu").manual_seed(42)
     image = pipe(
         FOX_PROMPT,
@@ -281,6 +402,8 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("dump-gguf-tensors").set_defaults(fn=cmd_dump_gguf_tensors)
     sub.add_parser("dump-tokenizer-cases").set_defaults(fn=cmd_dump_tokenizer_cases)
+    sub.add_parser("dump-text-encoder").set_defaults(fn=cmd_dump_text_encoder)
+    sub.add_parser("dump-tiny-text-encoder").set_defaults(fn=cmd_dump_tiny_text_encoder)
     e2e = sub.add_parser("e2e")
     e2e.add_argument("--out", default="harness-512-seed42.png")
     e2e.add_argument("--device", default="mps")
