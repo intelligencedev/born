@@ -1,0 +1,9 @@
+torch
+diffusers
+transformers
+gguf
+safetensors
+numpy
+accelerate
+sentencepiece
+pillow

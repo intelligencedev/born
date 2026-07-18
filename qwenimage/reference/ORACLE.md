@@ -83,8 +83,11 @@ axes_dim={32,48,48})` builds the pe tensor consumed by `Rope::attention`.
 - `prompt_template_encode_start_idx = 34` — first 34 tokens dropped from outputs.
 - `out_layers = {2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35}` — the 12 hidden-state
   layers stacked as DiT context (matches text_layers=12, text_dim=2560).
-  (Verify indexing convention — embedding-is-layer-0 vs first-block-output — against
-  LLMEmbedder in sd.cpp during T6.)
+  Indexing VERIFIED (llm.hpp:1302, `out_layers.find(i + 1)` for 0-based block i):
+  out_layer L = output of block L-1 = **HF `hidden_states[L]`** with
+  `output_hidden_states=True` (HF index 0 = embeddings). Stacked in increasing-layer
+  order along the feature axis → (2560×12) per token, reshaped by the DiT to
+  (2560, 12, tokens). No final-norm layer in the krea2 set (that would be L=37).
 
 ## Sampler
 
