@@ -1,0 +1,4 @@
+fixtures/
+*.bin
+.venv/
+__pycache__/

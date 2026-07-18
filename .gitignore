@@ -134,3 +134,5 @@ docs/dev/
 
 # Internal format specification (not public until v1.0+)
 docs/spec/
+# krea2 spike: parity harness is a tracked deliverable
+!qwenimage/reference/
