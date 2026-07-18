@@ -58,10 +58,41 @@ def cmd_dump_gguf_tensors(_args) -> None:
     dump_json("gguf-manifest", manifest)
 
 
+KREA2_SYSTEM_TEMPLATE = (
+    "<|im_start|>system\nDescribe the image by detailing the color, shape, "
+    "size, texture, quantity, text, spatial relationships of the objects and "
+    "background:<|im_end|>\n<|im_start|>user\n"
+)
+FOX_PROMPT = "a red fox sitting in fresh snow, golden hour, photorealistic"
+
+
+def krea2_prompt(text: str) -> str:
+    return KREA2_SYSTEM_TEMPLATE + text + "<|im_end|>\n<|im_start|>assistant\n"
+
+
+def cmd_dump_tokenizer_cases(_args) -> None:
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(str(MODELS / "tokenizer"))
+    cases = [
+        "hello world",
+        "a red fox sitting in fresh snow, golden hour, photorealistic",
+        "Ünïcödé — em-dash, naïve café ☕",
+        "emoji 🦊🎨 and CJK 你好世界",
+        "  leading spaces and\nnewlines\t tabs",
+        "numbers 12345 67.89 and CamelCaseTokens",
+        krea2_prompt(FOX_PROMPT),
+        krea2_prompt(""),
+    ]
+    out = [{"text": c, "ids": tok(c, add_special_tokens=False)["input_ids"]} for c in cases]
+    dump_json("tokenizer-cases", out)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("dump-gguf-tensors").set_defaults(fn=cmd_dump_gguf_tensors)
+    sub.add_parser("dump-tokenizer-cases").set_defaults(fn=cmd_dump_tokenizer_cases)
     args = p.parse_args()
     args.fn(args)
 

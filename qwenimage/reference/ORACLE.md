@@ -14,7 +14,14 @@ Qwen3-VL 4B; dual-stream qwen_image → actually Krea2's own single-stream DiT).
 | `wan_2.1_vae.safetensors` | ~254 MB | `Comfy-Org/Wan_2.1_ComfyUI_repackaged` `split_files/vae/` |
 | `tokenizer/tokenizer.json`, `tokenizer/tokenizer_config.json` | few MB | `Qwen/Qwen3-VL-4B-Instruct` |
 
-SHA-256 sums: recorded after download completes (see below).
+SHA-256:
+
+```
+273a98be1afe317bc7228403b6434647eaf866cebe6aff1980c401b950473807  Krea-2-Turbo-Q4_K_M.gguf
+054721f478bc5fa6beffb7f38eae575d45298f88cbb8d2f83ef675a727863eb1  Qwen3VL-4B-Instruct-Q8_0.gguf
+2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b  wan_2.1_vae.safetensors
+a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7  tokenizer/tokenizer.json
+```
 
 ## sd.cpp oracle command
 
@@ -25,11 +32,27 @@ sd-cli --diffusion-model ~/.cache/manifold/krea2-models/Krea-2-Turbo-Q4_K_M.gguf
        --llm ~/.cache/manifold/krea2-models/Qwen3VL-4B-Instruct-Q8_0.gguf \
        --vae ~/.cache/manifold/krea2-models/wan_2.1_vae.safetensors \
        -p "a red fox sitting in fresh snow, golden hour, photorealistic" \
-       --steps 8 --cfg-scale 0.0 -W 512 -H 512 -s 42 --diffusion-fa -v \
+       --steps 8 --cfg-scale 1.0 -W 512 -H 512 -s 42 --diffusion-fa -v \
        -o oracle-512-seed42.png
 ```
 
-(Exact flags verified against `sd-cli --help` at run time; record final command + timing here.)
+VERIFIED 2026-07-18 (commit ea4e566 of sd.cpp): produces `oracle-512-seed42.png`
+(photorealistic red fox, golden hour). **CRITICAL SEMANTICS:** sd.cpp
+`--cfg-scale 0.0` means UNCONDITIONED (prompt ignored — produced an unrelated
+image); the distilled/turbo "no negative prompt" mode is `--cfg-scale 1.0`
+(single conditional DiT pass). Krea's advertised "guidance 0.0" == diffusers'
+guidance semantics == sd.cpp cfg 1.0. Our Go pipeline does exactly one
+conditional pass per step.
+
+Timing (M-series Metal): unconditioned 8-step run = 66.7s sampling + 17.5s VAE
+decode. Conditional run = 1097s sampling (!) + 17.0s decode — sd.cpp perf
+quirk with non-empty context on Metal, not investigated further (oracle
+correctness is what matters here).
+
+Scheduler VERIFIED from run log: `get_sigmas with discrete scheduler` +
+`FluxFlowDenoiser` (constant shift 1.15) — the resolution-dependent
+FluxScheduler mu is NOT used for krea2. flow_shift flag stayed `inf`
+(= use model default 1.15).
 
 ## Krea 2 architecture (from `krea2.hpp` — the transliteration blueprint)
 
