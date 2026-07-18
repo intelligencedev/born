@@ -397,6 +397,50 @@ def cmd_dump_tiny_dit(_args) -> None:
     dump("tinydit.out", out)
 
 
+def cmd_dump_dit_step(_args) -> None:
+    """Full-weight single-DiT-step fixture: real GGUF weights (f32), fox text
+    embeds from the textenc fixture, seeded 512x512 packed latents, first
+    timestep of the 8-step dynamic-shift schedule."""
+    import torch
+
+    prompt_embeds = torch.from_numpy(load_fixture("textenc.hidden"))
+    prompt_mask = torch.from_numpy(load_fixture("textenc.mask")).bool()
+
+    torch.manual_seed(42)
+    grid = 32  # 512 / 8 (vae) / 2 (patch)
+    img_seq = grid * grid
+    latents = torch.randn(1, img_seq, 64, dtype=torch.float32)
+
+    txt_seq = prompt_embeds.shape[1]
+    pos = torch.zeros(txt_seq + img_seq, 3, dtype=torch.long)
+    for i in range(img_seq):
+        pos[txt_seq + i] = torch.tensor([0, i // grid, i % grid])
+
+    # First sigma of the 8-step schedule (dynamic shift, seq len 1024).
+    import math
+
+    mu = 0.5 + (1.15 - 0.5) / (6400 - 256) * (img_seq - 256)
+    t = 1.0  # first step: sigma = flux_time_shift(mu, 1) applied by scheduler; the DiT consumes sigma directly
+    sigma = math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** 1.0) if t < 1.0 else 1.0
+    timestep = torch.tensor([sigma], dtype=torch.float32)
+
+    model = load_transformer(torch.float32)
+    with torch.no_grad():
+        out = model(
+            latents,
+            prompt_embeds,
+            timestep,
+            pos,
+            encoder_attention_mask=prompt_mask,
+            return_dict=False,
+        )[0]
+
+    dump("ditstep.latents", latents)
+    dump("ditstep.pos", pos.to(torch.float32))
+    dump("ditstep.t", timestep)
+    dump("ditstep.out", out)
+
+
 def load_transformer(dtype=None):
     """Krea2Transformer2DModel with weights from the SAME Q4_K_M GGUF born
     loads (Krea2 has no from_single_file GGUF path yet). Both sides store
@@ -508,6 +552,7 @@ def build_pipeline(device="mps", dtype=None):
         text_encoder=load_text_encoder(dtype),
         tokenizer=AutoTokenizer.from_pretrained(str(MODELS / "tokenizer")),
         transformer=transformer,
+        is_distilled=True,  # Turbo: constant mu=1.15 (official)
     )
     return pipe.to(device)
 
@@ -568,6 +613,7 @@ def cmd_e2e_cpu(args) -> None:
         text_encoder=None,
         tokenizer=AutoTokenizer.from_pretrained(str(MODELS / "tokenizer")),
         transformer=load_transformer(torch.float32),
+        is_distilled=True,  # Turbo: constant mu=1.15 (official)
     )
     gen = torch.Generator("cpu").manual_seed(42)
     image = pipe(
@@ -616,6 +662,7 @@ def main() -> None:
     sub.add_parser("dump-tokenizer-cases").set_defaults(fn=cmd_dump_tokenizer_cases)
     sub.add_parser("dump-text-encoder").set_defaults(fn=cmd_dump_text_encoder)
     sub.add_parser("dump-tiny-dit").set_defaults(fn=cmd_dump_tiny_dit)
+    sub.add_parser("dump-dit-step").set_defaults(fn=cmd_dump_dit_step)
     sub.add_parser("dump-tiny-text-encoder").set_defaults(fn=cmd_dump_tiny_text_encoder)
     e2e = sub.add_parser("e2e")
     e2e.add_argument("--out", default="harness-512-seed42.png")
