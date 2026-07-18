@@ -21,7 +21,7 @@ func TestVAEDecodeParity(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("converted VAE gguf not present (run convert_vae.py): %v", err)
 	}
-	z, zShape := loadFixture(t, "vae.z")     // (1, 16, 64, 64)
+	z, zShape := loadFixture(t, "vae.z")      // (1, 16, 64, 64)
 	want, wShape := loadFixture(t, "vae.out") // (1, 3, 512, 512)
 
 	f, err := gguf.ParseFile(path)

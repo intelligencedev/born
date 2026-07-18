@@ -207,6 +207,13 @@ func (v *VAE) Decode(z []float32, hIn, wIn int) ([]float32, int, int, error) {
 	wanRMSNormInPlace(x, v.normOut, h*w)
 	siluInPlace(x)
 	out, oh, ow := convApply(&v.convOut, x, h, w)
+	for i, val := range out {
+		if val > 1 {
+			out[i] = 1
+		} else if val < -1 {
+			out[i] = -1
+		}
+	}
 	return out, oh, ow, nil
 }
 
