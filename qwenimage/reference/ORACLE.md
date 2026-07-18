@@ -112,6 +112,32 @@ axes_dim={32,48,48})` builds the pe tensor consumed by `Rope::attention`.
   order along the feature axis → (2560×12) per token, reshaped by the DiT to
   (2560, 12, tokens). No final-norm layer in the krea2 set (that would be L=37).
 
+## Conditioning — authoritative diffusers Krea2Pipeline semantics (pipeline_krea2.py, diffusers 0.39)
+
+sd.cpp uses a simplified variable-length variant; the OFFICIAL training-time
+layout (which the Go port follows) is:
+
+- Fixed-length block `[prefix | prompt | PAD | suffix]`: prefix = 34-token
+  system template; prompt tokenized with truncation+padding to
+  `max_sequence_length(512) + 34 - 5`; then the 5-token suffix
+  `<|im_end|>\n<|im_start|>assistant\n` appended AFTER the padding.
+  Total 546 tokens; first 34 dropped from outputs → **512 text tokens**.
+- **Position ids = cumulative count of valid (non-pad) tokens** (pads consume
+  no position), broadcast across the 3 mRoPE axes. The suffix therefore sits
+  right after the prompt positionally despite trailing the padding.
+- Attention mask: bool, pads False; passed to the encoder AND returned (as
+  `prompt_embeds_mask`) for the transformer.
+- `text_encoder_select_layers = (2,5,8,11,14,17,20,23,26,29,32,35)` (matches
+  sd.cpp out_layers), stacked at dim=2 → (B, 512, 12, 2560).
+- Resolution must be divisible by vae_scale_factor(8) × patch(2) = 16.
+
+## Text encoder GGUF facts (Qwen3VL-4B-Instruct-Q8_0.gguf metadata)
+
+36 layers, hidden 2560, heads 32 (kv 8, head_dim 128), ffn 9728, rms_eps 1e-6,
+rope_theta 5e6, mrope sections [24,20,20,0], vocab 151936, no attention biases,
+per-head q_norm/k_norm (Qwen3 style). llama.cpp tensor names (`blk.N.attn_q.weight`
+etc.); HF mapping in harness.py `load_text_encoder`.
+
 ## Sampler
 
 - Prediction: `FLUX_FLOW_PRED` (flow matching, velocity prediction).
