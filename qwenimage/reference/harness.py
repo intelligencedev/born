@@ -273,16 +273,148 @@ def cmd_dump_tiny_text_encoder(_args) -> None:
     dump("tinytextenc.hidden.l2", out.hidden_states[2])
 
 
+def diffusers_to_gguf_name(k: str) -> str:
+    """Reverse of load_transformer's mapping (diffusers state dict -> GGUF)."""
+    import re
+
+    def attn_rev(rest: str) -> str:
+        return {
+            "attn.to_q.weight": "attn.wq.weight",
+            "attn.to_k.weight": "attn.wk.weight",
+            "attn.to_v.weight": "attn.wv.weight",
+            "attn.to_gate.weight": "attn.gate.weight",
+            "attn.norm_q.weight": "attn.qknorm.qnorm.scale",
+            "attn.norm_k.weight": "attn.qknorm.knorm.scale",
+            "attn.to_out.0.weight": "attn.wo.weight",
+            "ff.gate.weight": "mlp.gate.weight",
+            "ff.up.weight": "mlp.up.weight",
+            "ff.down.weight": "mlp.down.weight",
+            "norm1.weight": "prenorm.scale",
+            "norm2.weight": "postnorm.scale",
+        }[rest]
+
+    if k == "img_in.weight":
+        return "first.weight"
+    if k == "img_in.bias":
+        return "first.bias"
+    m = re.fullmatch(r"time_embed\.linear_([12])\.(weight|bias)", k)
+    if m:
+        return f"tmlp.{'0' if m.group(1) == '1' else '2'}.{m.group(2)}"
+    m = re.fullmatch(r"time_mod_proj\.(weight|bias)", k)
+    if m:
+        return f"tproj.1.{m.group(1)}"
+    if k == "txt_in.norm.weight":
+        return "txtmlp.0.scale"
+    m = re.fullmatch(r"txt_in\.linear_([12])\.(weight|bias)", k)
+    if m:
+        return f"txtmlp.{'1' if m.group(1) == '1' else '3'}.{m.group(2)}"
+    if k == "text_fusion.projector.weight":
+        return "txtfusion.projector.weight"
+    m = re.fullmatch(r"text_fusion\.(layerwise_blocks|refiner_blocks)\.(\d+)\.(.+)", k)
+    if m:
+        return f"txtfusion.{m.group(1)}.{m.group(2)}.{attn_rev(m.group(3))}"
+    m = re.fullmatch(r"transformer_blocks\.(\d+)\.(.+)", k)
+    if m:
+        if m.group(2) == "scale_shift_table":
+            return f"blocks.{m.group(1)}.mod.lin"
+        return f"blocks.{m.group(1)}.{attn_rev(m.group(2))}"
+    if k == "final_layer.scale_shift_table":
+        return "last.modulation.lin"
+    if k == "final_layer.norm.weight":
+        return "last.norm.scale"
+    m = re.fullmatch(r"final_layer\.linear\.(weight|bias)", k)
+    if m:
+        return f"last.linear.{m.group(1)}"
+    raise ValueError(f"unmapped diffusers key {k}")
+
+
+def cmd_dump_tiny_dit(_args) -> None:
+    """Tiny random Krea2 DiT + IO fixture with per-stage intermediates.
+    Weights dumped under GGUF names; mod.lin flattened back to 1-D like the
+    real checkpoint."""
+    import torch
+    from diffusers import Krea2Transformer2DModel
+
+    torch.manual_seed(11)
+    model = Krea2Transformer2DModel(
+        in_channels=16,
+        num_layers=2,
+        attention_head_dim=8,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        intermediate_size=64,
+        timestep_embed_dim=16,
+        text_hidden_dim=32,
+        num_text_layers=3,
+        text_num_attention_heads=2,
+        text_num_key_value_heads=2,
+        text_intermediate_size=48,
+        axes_dims_rope=(4, 2, 2),
+        rope_theta=1000.0,
+    ).eval()
+
+    for k, v in model.state_dict().items():
+        g = diffusers_to_gguf_name(k)
+        if g.endswith("mod.lin") or g == "txtfusion.projector.weight":
+            v = v.reshape(-1) if g.endswith("mod.lin") else v.reshape(-1)
+        dump("tinydit.w." + g, v)
+
+    B, imgseq, txtseq = 1, 12, 6  # img grid 4x3 patches
+    torch.manual_seed(13)
+    hs = torch.randn(B, imgseq, 16)
+    ehs = torch.randn(B, txtseq, 3, 32)
+    t = torch.tensor([0.7])
+    pos = torch.zeros(txtseq + imgseq, 3, dtype=torch.long)
+    grid_h, grid_w = 4, 3
+    for i in range(imgseq):
+        pos[txtseq + i] = torch.tensor([0, i // grid_w, i % grid_w])
+    mask = torch.tensor([[1, 1, 1, 0, 0, 1]]).bool()  # middle padding
+
+    stages = {}
+
+    def cap(name):
+        def hook(_m, _i, out):
+            stages[name] = out[0] if isinstance(out, tuple) else out
+
+        return hook
+
+    model.text_fusion.register_forward_hook(cap("text_fusion"))
+    model.txt_in.register_forward_hook(cap("txt_in"))
+    model.time_embed.register_forward_hook(cap("temb"))
+    for i, blk in enumerate(model.transformer_blocks):
+        blk.register_forward_hook(cap(f"block{i}"))
+
+    with torch.no_grad():
+        out = model(hs, ehs, t, pos, encoder_attention_mask=mask, return_dict=False)[0]
+
+    dump("tinydit.in.hidden", hs)
+    dump("tinydit.in.text", ehs)
+    dump("tinydit.in.pos", pos.to(torch.float32))
+    dump("tinydit.in.mask", mask.to(torch.float32))
+    dump("tinydit.in.t", t)
+    for name, v in stages.items():
+        dump(f"tinydit.stage.{name}", v)
+    dump("tinydit.out", out)
+
+
 def load_transformer(dtype=None):
     """Krea2Transformer2DModel with weights from the SAME Q4_K_M GGUF born
     loads (Krea2 has no from_single_file GGUF path yet). Both sides store
-    zero-centered RMSNorm scales, so the mapping is 1:1 with no offsets."""
+    zero-centered RMSNorm scales, so the mapping is 1:1 with no offsets.
+
+    The dequantized f32 state dict is cached next to the fixtures (~48 GB)
+    because gguf-py K-quant dequantization costs ~20 min per run."""
     import torch
     from diffusers import Krea2Transformer2DModel
     from gguf import GGUFReader
     from gguf.quants import dequantize
 
     dtype = dtype or torch.float32
+    cache = pathlib.Path(__file__).parent / "fixtures" / "dit-f32-state.pt"
+    if dtype == torch.float32 and cache.exists():
+        model = Krea2Transformer2DModel()
+        model.load_state_dict(torch.load(cache, mmap=True, weights_only=True))
+        return model.eval()
 
     def attn(rest):
         return {
@@ -343,6 +475,9 @@ def load_transformer(dtype=None):
 
     model = Krea2Transformer2DModel()
     model.load_state_dict(sd, strict=True)  # raises on any mismatch
+    if dtype == torch.float32:
+        torch.save(model.state_dict(), cache)
+        print(f"cached f32 state dict at {cache}")
     return model.to(dtype).eval()
 
 
@@ -392,10 +527,70 @@ def _patch_rope_dtype_for_mps() -> None:
     tk.apply_rotary_emb = rope_same_dtype
 
 
+def load_fixture(name: str):
+    import json
+
+    import numpy as np
+
+    fix = pathlib.Path(__file__).parent / "fixtures"
+    meta = json.loads((fix / f"{name}.json").read_text())
+    data = np.frombuffer((fix / f"{name}.bin").read_bytes(), dtype=np.float32)
+    return data.reshape(meta["shape"]).copy()
+
+
+def cmd_e2e_cpu(args) -> None:
+    """Sequential CPU f32 e2e: text embeds come from the dumped
+    textenc.hidden fixture (so only the 48 GB f32 DiT + VAE are resident).
+    Slow but dtype-drama-free; also the reference path for trajectory
+    fixtures."""
+    import torch
+    from diffusers import (
+        AutoencoderKLWan,
+        FlowMatchEulerDiscreteScheduler,
+        Krea2Pipeline,
+    )
+    from transformers import AutoTokenizer
+
+    prompt_embeds = torch.from_numpy(load_fixture("textenc.hidden"))
+    prompt_mask = torch.from_numpy(load_fixture("textenc.mask")).bool()
+
+    pipe = Krea2Pipeline(
+        scheduler=FlowMatchEulerDiscreteScheduler(
+            use_dynamic_shifting=True,
+            base_shift=0.5,
+            max_shift=1.15,
+            base_image_seq_len=256,
+            max_image_seq_len=6400,
+        ),
+        vae=AutoencoderKLWan.from_single_file(
+            str(MODELS / "wan_2.1_vae.safetensors"), torch_dtype=torch.float32
+        ),
+        text_encoder=None,
+        tokenizer=AutoTokenizer.from_pretrained(str(MODELS / "tokenizer")),
+        transformer=load_transformer(torch.float32),
+    )
+    gen = torch.Generator("cpu").manual_seed(42)
+    image = pipe(
+        prompt=None,
+        prompt_embeds=prompt_embeds,
+        prompt_embeds_mask=prompt_mask,
+        guidance_scale=0.0,  # Krea semantics: 0.0 = single conditional pass (do_cfg is scale>0)
+        width=512,
+        height=512,
+        num_inference_steps=8,
+        generator=gen,
+    ).images[0]
+    image.save(args.out)
+    print(f"saved {args.out}")
+
+
 def cmd_e2e(args) -> None:
     import torch
 
     device = args.device
+    if device == "cpu-seq":
+        cmd_e2e_cpu(args)
+        return
     if device == "mps":
         _patch_rope_dtype_for_mps()
     # fp16: the 12B DiT in f32 would be ~48 GB (over budget with the encoder
@@ -420,6 +615,7 @@ def main() -> None:
     sub.add_parser("dump-gguf-tensors").set_defaults(fn=cmd_dump_gguf_tensors)
     sub.add_parser("dump-tokenizer-cases").set_defaults(fn=cmd_dump_tokenizer_cases)
     sub.add_parser("dump-text-encoder").set_defaults(fn=cmd_dump_text_encoder)
+    sub.add_parser("dump-tiny-dit").set_defaults(fn=cmd_dump_tiny_dit)
     sub.add_parser("dump-tiny-text-encoder").set_defaults(fn=cmd_dump_tiny_text_encoder)
     e2e = sub.add_parser("e2e")
     e2e.add_argument("--out", default="harness-512-seed42.png")
