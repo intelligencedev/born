@@ -3,6 +3,8 @@ package qwenimage
 import (
 	"fmt"
 	"math"
+	"runtime"
+	"sync"
 )
 
 // TextEncoderConfig describes the Qwen3-VL text tower. Defaults are pinned
@@ -190,7 +192,6 @@ func (te *TextEncoder) Forward(ids []int32, valid []bool, selectLayers []int) ([
 type teScratch struct {
 	normed, q, k, v, attnOut, proj []float32
 	gate, up                       []float32
-	scores                         []float32
 }
 
 func newTeScratch(cfg TextEncoderConfig, seq int) *teScratch {
@@ -203,7 +204,6 @@ func newTeScratch(cfg TextEncoderConfig, seq int) *teScratch {
 		proj:    make([]float32, seq*cfg.Hidden),
 		gate:    make([]float32, seq*cfg.FFN),
 		up:      make([]float32, seq*cfg.FFN),
-		scores:  make([]float32, seq),
 	}
 }
 
@@ -222,61 +222,68 @@ func (te *TextEncoder) layerForward(l *teLayer, x []float32, valid []bool, cosTa
 	applyHeadNormRope(s.q, seq, cfg.Heads, cfg.HeadDim, l.qNorm, cfg.Eps, cosTab, sinTab, half)
 	applyHeadNormRope(s.k, seq, cfg.KVHeads, cfg.HeadDim, l.kNorm, cfg.Eps, cosTab, sinTab, half)
 
-	// Causal GQA attention with padding-key masking.
+	// Causal GQA attention with padding-key masking, parallel over heads.
 	group := cfg.Heads / cfg.KVHeads
 	scale := 1 / float32(math.Sqrt(float64(cfg.HeadDim)))
+	var wg sync.WaitGroup
 	for h := 0; h < cfg.Heads; h++ {
-		kvh := h / group
-		for tq := 0; tq < seq; tq++ {
-			qv := s.q[(tq*cfg.Heads+h)*cfg.HeadDim:][:cfg.HeadDim]
-			var maxScore float32 = float32(math.Inf(-1))
-			for tk := 0; tk <= tq; tk++ {
-				if !valid[tk] {
-					s.scores[tk] = float32(math.Inf(-1))
-					continue
+		wg.Add(1)
+		go func(h int) {
+			defer wg.Done()
+			scores := make([]float32, seq)
+			kvh := h / group
+			for tq := 0; tq < seq; tq++ {
+				qv := s.q[(tq*cfg.Heads+h)*cfg.HeadDim:][:cfg.HeadDim]
+				maxScore := float32(math.Inf(-1))
+				for tk := 0; tk <= tq; tk++ {
+					if !valid[tk] {
+						scores[tk] = float32(math.Inf(-1))
+						continue
+					}
+					kv := s.k[(tk*cfg.KVHeads+kvh)*cfg.HeadDim:][:cfg.HeadDim]
+					var dot float32
+					for d := 0; d < cfg.HeadDim; d++ {
+						dot += qv[d] * kv[d]
+					}
+					dot *= scale
+					scores[tk] = dot
+					if dot > maxScore {
+						maxScore = dot
+					}
 				}
-				kv := s.k[(tk*cfg.KVHeads+kvh)*cfg.HeadDim:][:cfg.HeadDim]
-				var dot float32
-				for d := 0; d < cfg.HeadDim; d++ {
-					dot += qv[d] * kv[d]
+				outRow := s.attnOut[(tq*cfg.Heads+h)*cfg.HeadDim:][:cfg.HeadDim]
+				for d := range outRow {
+					outRow[d] = 0
 				}
-				dot *= scale
-				s.scores[tk] = dot
-				if dot > maxScore {
-					maxScore = dot
+				if math.IsInf(float64(maxScore), -1) {
+					continue // no attendable key (all-pad prefix)
+				}
+				var denom float32
+				for tk := 0; tk <= tq; tk++ {
+					sc := scores[tk]
+					if math.IsInf(float64(sc), -1) {
+						scores[tk] = 0
+						continue
+					}
+					e := float32(math.Exp(float64(sc - maxScore)))
+					scores[tk] = e
+					denom += e
+				}
+				inv := 1 / denom
+				for tk := 0; tk <= tq; tk++ {
+					w := scores[tk] * inv
+					if w == 0 {
+						continue
+					}
+					vv := s.v[(tk*cfg.KVHeads+kvh)*cfg.HeadDim:][:cfg.HeadDim]
+					for d := 0; d < cfg.HeadDim; d++ {
+						outRow[d] += w * vv[d]
+					}
 				}
 			}
-			outRow := s.attnOut[(tq*cfg.Heads+h)*cfg.HeadDim:][:cfg.HeadDim]
-			for d := range outRow {
-				outRow[d] = 0
-			}
-			if math.IsInf(float64(maxScore), -1) {
-				continue // no attendable key (all-pad prefix)
-			}
-			var denom float32
-			for tk := 0; tk <= tq; tk++ {
-				sc := s.scores[tk]
-				if math.IsInf(float64(sc), -1) {
-					s.scores[tk] = 0
-					continue
-				}
-				e := float32(math.Exp(float64(sc - maxScore)))
-				s.scores[tk] = e
-				denom += e
-			}
-			inv := 1 / denom
-			for tk := 0; tk <= tq; tk++ {
-				w := s.scores[tk] * inv
-				if w == 0 {
-					continue
-				}
-				vv := s.v[(tk*cfg.KVHeads+kvh)*cfg.HeadDim:][:cfg.HeadDim]
-				for d := 0; d < cfg.HeadDim; d++ {
-					outRow[d] += w * vv[d]
-				}
-			}
-		}
+		}(h)
 	}
+	wg.Wait()
 	matmulInto(s.proj, s.attnOut, l.wo, seq, cfg.Heads*cfg.HeadDim, l.woOut)
 	for i := range x {
 		x[i] += s.proj[i]
@@ -337,9 +344,36 @@ func applyHeadNormRope(qk []float32, seq, heads, headDim int, normW []float32, e
 	}
 }
 
-// matmulInto computes dst[seq, out] = x[seq, in] · w[in, out].
+// matmulInto computes dst[seq, out] = x[seq, in] · w[in, out], parallelized
+// over sequence rows (the same row-split strategy that paid off in the
+// Supertonic conv/batchmatmul work).
 func matmulInto(dst, x, w []float32, seq, in, out int) {
-	for t := 0; t < seq; t++ {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > seq {
+		workers = seq
+	}
+	if workers <= 1 {
+		matmulRows(dst, x, w, 0, seq, in, out)
+		return
+	}
+	var wg sync.WaitGroup
+	chunk := (seq + workers - 1) / workers
+	for start := 0; start < seq; start += chunk {
+		end := start + chunk
+		if end > seq {
+			end = seq
+		}
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			matmulRows(dst, x, w, start, end, in, out)
+		}(start, end)
+	}
+	wg.Wait()
+}
+
+func matmulRows(dst, x, w []float32, from, to, in, out int) {
+	for t := from; t < to; t++ {
 		row := x[t*in : (t+1)*in]
 		o := dst[t*out : (t+1)*out]
 		for i := range o {

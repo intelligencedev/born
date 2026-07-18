@@ -377,10 +377,27 @@ def build_pipeline(device="mps", dtype=None):
     return pipe.to(device)
 
 
+def _patch_rope_dtype_for_mps() -> None:
+    """MPS workaround: diffusers' Krea2 rope tables are f32, promoting fp16
+    q/k to f32 while v stays fp16 — MPS matmul asserts on mixed dtypes.
+    Cast the rope output back to the input dtype (numerics unchanged: rope is
+    still computed in f32)."""
+    import diffusers.models.transformers.transformer_krea2 as tk
+
+    orig = tk.apply_rotary_emb
+
+    def rope_same_dtype(x, *a, **kw):
+        return orig(x, *a, **kw).to(x.dtype)
+
+    tk.apply_rotary_emb = rope_same_dtype
+
+
 def cmd_e2e(args) -> None:
     import torch
 
     device = args.device
+    if device == "mps":
+        _patch_rope_dtype_for_mps()
     # fp16: the 12B DiT in f32 would be ~48 GB (over budget with the encoder
     # resident), and MPS rejects bf16 in some matmul kernels. Self-validation
     # only needs a recognizable image; parity fixtures are per-component f32.
