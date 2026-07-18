@@ -28,11 +28,18 @@ func handleReshape(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.R
 		return nil, fmt.Errorf("reshape requires 2 inputs (data, shape), got %d", len(inputs))
 	}
 
-	// Get target shape from second input
+	// Get target shape from second input. Per ONNX Reshape semantics
+	// (allowzero=0 default), a 0 entry means "copy the corresponding dim from
+	// the input shape"; only -1 is inferred.
 	shapeData := inputs[1].AsInt64()
+	inShape := inputs[0].Shape()
 	newShape := make(tensor.Shape, len(shapeData))
 	for i, v := range shapeData {
-		newShape[i] = int(v)
+		if v == 0 && i < len(inShape) {
+			newShape[i] = inShape[i]
+		} else {
+			newShape[i] = int(v)
+		}
 	}
 
 	result, err := tensor.Reshape(inputs[0], newShape)

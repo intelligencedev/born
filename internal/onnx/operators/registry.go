@@ -41,6 +41,7 @@ func NewRegistry() *Registry {
 	r.registerConvOps()
 	r.registerResizeOps()
 	r.registerSupertonicOps()
+	r.registerSTTOps()
 
 	return r
 }
