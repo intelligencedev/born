@@ -4,7 +4,12 @@
 
 ## Verdict
 
-(finalized after THE RUN — see bottom)
+**FEASIBLE — exit criterion met.** `imagegen -p "a red fox sitting in fresh
+snow, golden hour, photorealistic" -seed 42` produced a photorealistic fox
+(`reference/fox-go.png`) visually on par with the sd.cpp oracle and the
+Python harness output, fully in-process pure Go: tokenizer → 4B Qwen3-VL
+encoder → 12B Krea 2 Turbo DiT (8 steps) → Wan 2.1 VAE. Zero CGO, zero
+Python, zero ONNX runtime at inference time.
 
 ## Parity ladder (all gates green)
 
@@ -29,7 +34,7 @@
 | DiT load (Q4→f32) | 83 s | 12B params |
 | DiT forward f32 (seq 1536) | 11 m 09 s | **swap-bound at 69 GB heap** — motivated f16 storage |
 | VAE decode 512² | 34 s | naive conv loops |
-| THE RUN (f16 DiT, sequential loads) | (recorded below) | |
+| THE RUN (f16 DiT, sequential loads) | **2 h 38 m total; ~18 min/DiT step** | peak RSS 43 GB, **zero swaps**; 512², 8 steps, seed 42 |
 
 Optimization headroom (per the Supertonic playbook, none applied yet beyond
 row-parallelism): register-tiled/blocked matmul, im2col conv, on-the-fly
@@ -86,4 +91,20 @@ by `reference/convert_vae.py`) · `tokenizer/tokenizer.json` (Qwen3-VL-4B).
 
 ## Go/no-go recommendation for Manifold productization
 
-(finalized after THE RUN)
+**GO, with perf work as the gating follow-up.** Correctness is proven at
+every layer against strong oracles; the architecture is fully understood and
+documented. What stands between this spike and a usable Manifold `/image`
+endpoint:
+
+1. **Perf (required):** ~18 min/step is a demo, not a product. Known levers,
+   none applied yet: blocked/register-tiled matmul (the Supertonic conv work
+   got 28× from exactly this class of change), on-the-fly Q4_K matmul
+   (kills the f16 intermediate: less memory AND 4× less weight bandwidth),
+   flash-style attention tiling, and ultimately born's WebGPU backend on
+   Apple Silicon. A 10-20× CPU speedup to ~1-2 min/image at 512² looks
+   plausible before touching the GPU.
+2. **Integration (mapped, small):** `ImageConfig{Engine, ModelDir}` +
+   `sync.Once` holder + `/image` handler + `saveGeneratedImages`, exactly
+   per the TTS/STT pattern (integration map in the manifold spec doc).
+3. **Robustness:** multi-resolution testing, 1024² memory profile,
+   parity CI against committed small fixtures.
