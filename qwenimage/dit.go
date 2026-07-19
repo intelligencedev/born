@@ -259,18 +259,7 @@ func (d *DiT) Forward(img []float32, imgSeq int, text []float32, txtSeq int, tim
 	fused := make([]float32, len(text))
 	copy(fused, text)
 	for bi := range d.fusionLayerwise {
-		b := &d.fusionLayerwise[bi]
-		// Sequence length = TextLayers; batch = txtSeq tokens.
-		var wg sync.WaitGroup
-		for tok := 0; tok < txtSeq; tok++ {
-			wg.Add(1)
-			go func(tok int) {
-				defer wg.Done()
-				seg := fused[tok*cfg.TextLayers*cfg.TextDim : (tok+1)*cfg.TextLayers*cfg.TextDim]
-				fusionBlockForward(b, seg, cfg.TextLayers, nil, cfg.Eps)
-			}(tok)
-		}
-		wg.Wait()
+		fusionLayerwiseForward(&d.fusionLayerwise[bi], fused, txtSeq, cfg.TextLayers, cfg.Eps)
 	}
 	// Projector: collapse the layer axis per token/dim.
 	txt := make([]float32, txtSeq*cfg.TextDim)
@@ -482,6 +471,93 @@ func fusionBlockForward(b *fusionBlock, x []float32, seq int, keyValid []bool, e
 	copy(s.modIn[:seq*dim], s.normed[:seq*dim])
 	ffForward(&b.ff, s, s.modIn, seq)
 	for i := 0; i < seq*dim; i++ {
+		x[i] += s.proj[i]
+	}
+}
+
+// fusionLayerwiseForward runs one layerwise text-fusion block over all
+// tokens at once: the projections are batched into single matmuls across
+// tokens*L rows (GPU-friendly); only the tiny per-token L x L attentions run
+// as CPU loops. Equivalent to running the block per token with the layer
+// axis as the sequence.
+func fusionLayerwiseForward(b *fusionBlock, x []float32, tokens, L int, eps float32) {
+	dim := b.attn.dim
+	rows := tokens * L
+	qDim := b.attn.heads * b.attn.headDim
+	kvDim := b.attn.kvHeads * b.attn.headDim
+	s := &ditScratch{}
+	s.ensure(rows, dim, qDim, kvDim, b.ff.ffn)
+
+	// --- Attention sublayer (batched projections) ---
+	rmsNormZeroCenteredInto(s.normed[:rows*dim], x[:rows*dim], b.preNorm, dim, eps)
+	b.attn.wq.mul(s.q[:rows*qDim], s.normed[:rows*dim], rows)
+	b.attn.wk.mul(s.k[:rows*kvDim], s.normed[:rows*dim], rows)
+	b.attn.wv.mul(s.v[:rows*kvDim], s.normed[:rows*dim], rows)
+	b.attn.gate.mul(s.gateBuf[:rows*dim], s.normed[:rows*dim], rows)
+
+	applyHeadNormRopeRange(s.q, 0, rows, b.attn.heads, b.attn.headDim, b.attn.qNorm, nil, nil, b.attn.headDim/2)
+	applyHeadNormRopeRange(s.k, 0, rows, b.attn.kvHeads, b.attn.headDim, b.attn.kNorm, nil, nil, b.attn.headDim/2)
+
+	a := &b.attn
+	group := a.heads / a.kvHeads
+	scale := 1 / float32(math.Sqrt(float64(a.headDim)))
+	parallelRows(tokens, func(from, to int) {
+		scores := make([]float32, L)
+		for tok := from; tok < to; tok++ {
+			base := tok * L
+			for h := 0; h < a.heads; h++ {
+				kvh := h / group
+				for tq := 0; tq < L; tq++ {
+					qv := s.q[((base+tq)*a.heads+h)*a.headDim:][:a.headDim]
+					maxScore := float32(math.Inf(-1))
+					for tk := 0; tk < L; tk++ {
+						kv := s.k[((base+tk)*a.kvHeads+kvh)*a.headDim:][:a.headDim]
+						var dot float32
+						for d := 0; d < a.headDim; d++ {
+							dot += qv[d] * kv[d]
+						}
+						dot *= scale
+						scores[tk] = dot
+						if dot > maxScore {
+							maxScore = dot
+						}
+					}
+					var denom float32
+					for tk := 0; tk < L; tk++ {
+						e := float32(math.Exp(float64(scores[tk] - maxScore)))
+						scores[tk] = e
+						denom += e
+					}
+					inv := 1 / denom
+					outRow := s.attnOut[((base+tq)*a.heads+h)*a.headDim:][:a.headDim]
+					for d := range outRow {
+						outRow[d] = 0
+					}
+					for tk := 0; tk < L; tk++ {
+						w := scores[tk] * inv
+						vv := s.v[((base+tk)*a.kvHeads+kvh)*a.headDim:][:a.headDim]
+						for d := 0; d < a.headDim; d++ {
+							outRow[d] += w * vv[d]
+						}
+					}
+				}
+			}
+		}
+	})
+	parallelRows(rows, func(from, to int) {
+		for i := from * dim; i < to*dim; i++ {
+			s.attnOut[i] *= sigmoid(s.gateBuf[i])
+		}
+	})
+	a.wo.mul(s.proj[:rows*dim], s.attnOut[:rows*qDim], rows)
+	for i := 0; i < rows*dim; i++ {
+		x[i] += s.proj[i]
+	}
+
+	// --- MLP sublayer (batched) ---
+	rmsNormZeroCenteredInto(s.normed[:rows*dim], x[:rows*dim], b.postNorm, dim, eps)
+	ffForward(&b.ff, s, s.normed, rows)
+	for i := 0; i < rows*dim; i++ {
 		x[i] += s.proj[i]
 	}
 }
