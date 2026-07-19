@@ -63,40 +63,86 @@ func toHalf(w []float32) halfMat {
 	return h
 }
 
+// tokenTile bounds how many sequence rows share one pass over the weight
+// matrix. Each weight row (out×2 bytes of f16) is then reused tokenTile
+// times while L1/L2-hot, cutting weight traffic by the same factor — the
+// unblocked form streamed the full matrix once per token and ran
+// memory-bound (~44 GFLOPS baseline on M3 Max).
+const tokenTile = 64
+
 // matmulHalfInto computes dst[seq, out] = x[seq, in] · w[in, out] with f16
-// weights, parallel over sequence rows.
+// weights, parallel over token tiles, 4-token register unroll inside.
 func matmulHalfInto(dst, x []float32, w halfMat, seq, in, out int) {
-	workers := runtime.GOMAXPROCS(0)
-	if workers > seq {
-		workers = seq
-	}
-	if workers <= 1 {
-		matmulHalfRows(dst, x, w, 0, seq, in, out)
-		return
-	}
 	var wg sync.WaitGroup
-	chunk := (seq + workers - 1) / workers
-	for start := 0; start < seq; start += chunk {
-		end := start + chunk
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for start := 0; start < seq; start += tokenTile {
+		end := start + tokenTile
 		if end > seq {
 			end = seq
 		}
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(start, end int) {
 			defer wg.Done()
-			matmulHalfRows(dst, x, w, start, end, in, out)
+			matmulHalfTile(dst, x, w, start, end, in, out)
+			<-sem
 		}(start, end)
 	}
 	wg.Wait()
 }
 
-func matmulHalfRows(dst, x []float32, w halfMat, from, to, in, out int) {
-	for t := from; t < to; t++ {
+func matmulHalfTile(dst, x []float32, w halfMat, from, to, in, out int) {
+	for i := from * out; i < to*out; i++ {
+		dst[i] = 0
+	}
+	t := from
+	for ; t+4 <= to; t += 4 {
+		x0 := x[t*in : (t+1)*in]
+		x1 := x[(t+1)*in : (t+2)*in]
+		x2 := x[(t+2)*in : (t+3)*in]
+		x3 := x[(t+3)*in : (t+4)*in]
+		d0 := dst[t*out : (t+1)*out]
+		d1 := dst[(t+1)*out : (t+2)*out]
+		d2 := dst[(t+2)*out : (t+3)*out]
+		d3 := dst[(t+3)*out : (t+4)*out]
+		i := 0
+		for ; i+4 <= in; i += 4 {
+			// 4 input rows × 4 tokens: each dst store amortizes 16 FMAs and
+			// each f16 decode serves 4 tokens.
+			xa0, xa1, xa2, xa3 := x0[i], x1[i], x2[i], x3[i]
+			xb0, xb1, xb2, xb3 := x0[i+1], x1[i+1], x2[i+1], x3[i+1]
+			xc0, xc1, xc2, xc3 := x0[i+2], x1[i+2], x2[i+2], x3[i+2]
+			xd0, xd1, xd2, xd3 := x0[i+3], x1[i+3], x2[i+3], x3[i+3]
+			wa := w[i*out : (i+1)*out]
+			wb := w[(i+1)*out : (i+2)*out]
+			wc := w[(i+2)*out : (i+3)*out]
+			wd := w[(i+3)*out : (i+4)*out]
+			for j := 0; j < out; j++ {
+				va := f16Table[wa[j]]
+				vb := f16Table[wb[j]]
+				vc := f16Table[wc[j]]
+				vd := f16Table[wd[j]]
+				d0[j] += xa0*va + xb0*vb + xc0*vc + xd0*vd
+				d1[j] += xa1*va + xb1*vb + xc1*vc + xd1*vd
+				d2[j] += xa2*va + xb2*vb + xc2*vc + xd2*vd
+				d3[j] += xa3*va + xb3*vb + xc3*vc + xd3*vd
+			}
+		}
+		for ; i < in; i++ {
+			xv0, xv1, xv2, xv3 := x0[i], x1[i], x2[i], x3[i]
+			wRow := w[i*out : (i+1)*out]
+			for j, wbv := range wRow {
+				wv := f16Table[wbv]
+				d0[j] += xv0 * wv
+				d1[j] += xv1 * wv
+				d2[j] += xv2 * wv
+				d3[j] += xv3 * wv
+			}
+		}
+	}
+	for ; t < to; t++ {
 		row := x[t*in : (t+1)*in]
 		o := dst[t*out : (t+1)*out]
-		for i := range o {
-			o[i] = 0
-		}
 		for i, xv := range row {
 			if xv == 0 {
 				continue
@@ -107,6 +153,32 @@ func matmulHalfRows(dst, x []float32, w halfMat, from, to, in, out int) {
 			}
 		}
 	}
+}
+
+// parallelRows splits [0,rows) across GOMAXPROCS workers.
+func parallelRows(rows int, fn func(from, to int)) {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > rows {
+		workers = rows
+	}
+	if workers <= 1 {
+		fn(0, rows)
+		return
+	}
+	var wg sync.WaitGroup
+	chunk := (rows + workers - 1) / workers
+	for start := 0; start < rows; start += chunk {
+		end := start + chunk
+		if end > rows {
+			end = rows
+		}
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			fn(start, end)
+		}(start, end)
+	}
+	wg.Wait()
 }
 
 // matvecHalfInto computes dst[out] = x[in] · w[in, out].

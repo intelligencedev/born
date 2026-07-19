@@ -436,24 +436,32 @@ func (d *DiT) blockForward(b *ditBlock, x []float32, seq int, tembMod, cosTab, s
 	scale2, shift2, gate2 := mods[3*h:4*h], mods[4*h:5*h], mods[5*h:6*h]
 
 	// --- Attention sublayer ---
-	rmsNormZeroCenteredInto(s.normed, x[:seq*h], b.preNorm, h, cfg.Eps)
-	modulateInto(s.modIn, s.normed, scale1, shift1, seq, h)
+	parallelRows(seq, func(from, to int) {
+		rmsNormZeroCenteredInto(s.normed[from*h:to*h], x[from*h:to*h], b.preNorm, h, cfg.Eps)
+		modulateInto(s.modIn[from*h:to*h], s.normed[from*h:to*h], scale1, shift1, to-from, h)
+	})
 	attnForward(&b.attn, s, s.modIn, seq, cosTab, sinTab, keyValid, false)
-	for t := 0; t < seq; t++ {
-		for i := 0; i < h; i++ {
-			x[t*h+i] += s.proj[t*h+i] * gate1[i]
+	parallelRows(seq, func(from, to int) {
+		for t := from; t < to; t++ {
+			for i := 0; i < h; i++ {
+				x[t*h+i] += s.proj[t*h+i] * gate1[i]
+			}
 		}
-	}
+	})
 
 	// --- MLP sublayer ---
-	rmsNormZeroCenteredInto(s.normed, x[:seq*h], b.postNorm, h, cfg.Eps)
-	modulateInto(s.modIn, s.normed, scale2, shift2, seq, h)
+	parallelRows(seq, func(from, to int) {
+		rmsNormZeroCenteredInto(s.normed[from*h:to*h], x[from*h:to*h], b.postNorm, h, cfg.Eps)
+		modulateInto(s.modIn[from*h:to*h], s.normed[from*h:to*h], scale2, shift2, to-from, h)
+	})
 	ffForward(&b.ff, s, s.modIn, seq)
-	for t := 0; t < seq; t++ {
-		for i := 0; i < h; i++ {
-			x[t*h+i] += s.proj[t*h+i] * gate2[i]
+	parallelRows(seq, func(from, to int) {
+		for t := from; t < to; t++ {
+			for i := 0; i < h; i++ {
+				x[t*h+i] += s.proj[t*h+i] * gate2[i]
+			}
 		}
-	}
+	})
 }
 
 // fusionBlockForward runs one Krea text-fusion block in place over
@@ -490,8 +498,11 @@ func attnForward(a *ditAttn, s *ditScratch, in []float32, seq int, cosTab, sinTa
 	matmulHalfInto(s.v[:seq*kvDim], in[:seq*dim], a.wv, seq, dim, kvDim)
 	matmulHalfInto(s.gateBuf[:seq*dim], in[:seq*dim], a.gate, seq, dim, dim)
 
-	applyHeadNormRopeInterleaved(s.q, seq, a.heads, a.headDim, a.qNorm, cosTab, sinTab)
-	applyHeadNormRopeInterleaved(s.k, seq, a.kvHeads, a.headDim, a.kNorm, cosTab, sinTab)
+	half := a.headDim / 2
+	parallelRows(seq, func(from, to int) {
+		applyHeadNormRopeRange(s.q, from, to, a.heads, a.headDim, a.qNorm, cosTab, sinTab, half)
+		applyHeadNormRopeRange(s.k, from, to, a.kvHeads, a.headDim, a.kNorm, cosTab, sinTab, half)
+	})
 
 	group := a.heads / a.kvHeads
 	scale := 1 / float32(math.Sqrt(float64(a.headDim)))
@@ -553,27 +564,30 @@ func attnForward(a *ditAttn, s *ditScratch, in []float32, seq int, cosTab, sinTa
 	wg.Wait()
 
 	// Sigmoid output gate then wo.
-	for i := 0; i < seq*dim; i++ {
-		s.attnOut[i] *= sigmoid(s.gateBuf[i])
-	}
+	parallelRows(seq, func(from, to int) {
+		for i := from * dim; i < to*dim; i++ {
+			s.attnOut[i] *= sigmoid(s.gateBuf[i])
+		}
+	})
 	matmulHalfInto(s.proj[:seq*dim], s.attnOut[:seq*qDim], a.wo, seq, qDim, dim)
 }
 
 func ffForward(f *ditFF, s *ditScratch, in []float32, seq int) {
 	matmulHalfInto(s.ffGate[:seq*f.ffn], in[:seq*f.dim], f.gate, seq, f.dim, f.ffn)
 	matmulHalfInto(s.ffUp[:seq*f.ffn], in[:seq*f.dim], f.up, seq, f.dim, f.ffn)
-	for i := 0; i < seq*f.ffn; i++ {
-		g := float64(s.ffGate[i])
-		s.ffGate[i] = float32(g/(1+math.Exp(-g))) * s.ffUp[i]
-	}
+	parallelRows(seq, func(from, to int) {
+		for i := from * f.ffn; i < to*f.ffn; i++ {
+			g := float64(s.ffGate[i])
+			s.ffGate[i] = float32(g/(1+math.Exp(-g))) * s.ffUp[i]
+		}
+	})
 	matmulHalfInto(s.proj[:seq*f.dim], s.ffGate[:seq*f.ffn], f.down, seq, f.ffn, f.dim)
 }
 
 // applyHeadNormRopeInterleaved: zero-centered per-head RMSNorm then FLUX-style
 // interleaved-pair rotation (pairs are adjacent lanes 2i, 2i+1).
-func applyHeadNormRopeInterleaved(qk []float32, seq, heads, headDim int, normW []float32, cosTab, sinTab []float32) {
-	half := headDim / 2
-	for t := 0; t < seq; t++ {
+func applyHeadNormRopeRange(qk []float32, from, to, heads, headDim int, normW []float32, cosTab, sinTab []float32, half int) {
+	for t := from; t < to; t++ {
 		for h := 0; h < heads; h++ {
 			vec := qk[(t*heads+h)*headDim:][:headDim]
 			var ss float64
