@@ -42,14 +42,14 @@ func (c DiTConfig) hidden() int { return c.Heads * c.HeadDim }
 // ditAttn holds one Krea attention module (DiT block or text fusion block).
 // All linears bias-free, weights stored transposed [in, out].
 type ditAttn struct {
-	wq, wk, wv, gate, wo halfMat
+	wq, wk, wv, gate, wo mat
 	qNorm, kNorm         []float32 // zero-centered scales [headDim]
 	dim, heads, kvHeads  int
 	headDim              int
 }
 
 type ditFF struct {
-	gate, up, down halfMat // transposed [in, out], f16 bits
+	gate, up, down mat // transposed [in, out]
 	dim, ffn       int
 }
 
@@ -70,18 +70,18 @@ type ditBlock struct {
 type DiT struct {
 	cfg DiTConfig
 
-	imgInW   halfMat
+	imgInW   mat
 	imgInB   []float32 // [hidden]
-	tmlp0W   halfMat
+	tmlp0W   mat
 	tmlp0B   []float32
-	tmlp2W   halfMat
+	tmlp2W   mat
 	tmlp2B   []float32
-	tprojW   halfMat
+	tprojW   mat
 	tprojB   []float32
 	txtNorm  []float32 // zero-centered [textDim]
-	txtMlp1W halfMat
+	txtMlp1W mat
 	txtMlp1B []float32
-	txtMlp3W halfMat
+	txtMlp3W mat
 	txtMlp3B []float32
 
 	fusionLayerwise []fusionBlock
@@ -92,7 +92,7 @@ type DiT struct {
 
 	lastNorm   []float32 // zero-centered [hidden]
 	lastModLin []float32 // [2*hidden]
-	lastLinW   halfMat
+	lastLinW   mat
 	lastLB     []float32 // [inCh]
 }
 
@@ -125,9 +125,9 @@ func LoadDiT(cfg DiTConfig, ws WeightSource) (*DiT, error) {
 		}
 		return data
 	}
-	tr := func(w []float32, out, in int) halfMat {
+	tr := func(w []float32, out, in int) mat {
 		if w == nil {
-			return nil
+			return mat{}
 		}
 		t := make([]float32, len(w))
 		for o := 0; o < out; o++ {
@@ -135,7 +135,7 @@ func LoadDiT(cfg DiTConfig, ws WeightSource) (*DiT, error) {
 				t[i*out+o] = w[o*in+i]
 			}
 		}
-		return toHalf(t)
+		return newMat(toHalf(t), in, out)
 	}
 	loadAttn := func(prefix string, dim, heads, kvHeads, headDim int) ditAttn {
 		return ditAttn{
@@ -251,7 +251,7 @@ func (d *DiT) Forward(img []float32, imgSeq int, text []float32, txtSeq int, tim
 		g[i] = geluTanh(v)
 	}
 	tembMod := make([]float32, 6*h)
-	matvecHalfInto(tembMod, g, d.tprojW, 6*h)
+	d.tprojW.mul(tembMod, g, 1)
 	addInto(tembMod, d.tprojB)
 
 	// Text fusion: layerwise blocks over the layer axis (each token is a
@@ -294,13 +294,13 @@ func (d *DiT) Forward(img []float32, imgSeq int, text []float32, txtSeq int, tim
 	{
 		normed := make([]float32, len(txt))
 		rmsNormZeroCenteredInto(normed, txt, d.txtNorm, cfg.TextDim, cfg.Eps)
-		matmulHalfInto(txtH, normed, d.txtMlp1W, txtSeq, cfg.TextDim, h)
+		d.txtMlp1W.mul(txtH, normed, txtSeq)
 		addBiasInto(txtH, d.txtMlp1B, txtSeq, h)
 		for i, v := range txtH {
 			txtH[i] = geluTanh(v)
 		}
 		tmp := make([]float32, txtSeq*h)
-		matmulHalfInto(tmp, txtH, d.txtMlp3W, txtSeq, h, h)
+		d.txtMlp3W.mul(tmp, txtH, txtSeq)
 		addBiasInto(tmp, d.txtMlp3B, txtSeq, h)
 		txtH = tmp
 	}
@@ -310,7 +310,7 @@ func (d *DiT) Forward(img []float32, imgSeq int, text []float32, txtSeq int, tim
 	x := make([]float32, seq*h)
 	copy(x, txtH)
 	imgH := x[txtSeq*h:]
-	matmulHalfInto(imgH, img, d.imgInW, imgSeq, cfg.InChannels, h)
+	d.imgInW.mul(imgH, img, imgSeq)
 	addBiasInto(imgH, d.imgInB, imgSeq, h)
 
 	// Combined key-validity: text pads invalid, image all valid.
@@ -343,7 +343,7 @@ func (d *DiT) Forward(img []float32, imgSeq int, text []float32, txtSeq int, tim
 				row[i] = (1+scale)*row[i] + shift
 			}
 		}
-		matmulHalfInto(out, normed, d.lastLinW, imgSeq, h, cfg.InChannels)
+		d.lastLinW.mul(out, normed, imgSeq)
 		addBiasInto(out, d.lastLB, imgSeq, cfg.InChannels)
 	}
 	return out, nil
@@ -361,13 +361,13 @@ func (d *DiT) timestepEmbed(t float64) []float32 {
 		sin[half+i] = float32(math.Sin(arg)) // then sin
 	}
 	h1 := make([]float32, h)
-	matvecHalfInto(h1, sin, d.tmlp0W, h)
+	d.tmlp0W.mul(h1, sin, 1)
 	addInto(h1, d.tmlp0B)
 	for i, v := range h1 {
 		h1[i] = geluTanh(v)
 	}
 	out := make([]float32, h)
-	matvecHalfInto(out, h1, d.tmlp2W, h)
+	d.tmlp2W.mul(out, h1, 1)
 	addInto(out, d.tmlp2B)
 	return out
 }
@@ -493,10 +493,10 @@ func attnForward(a *ditAttn, s *ditScratch, in []float32, seq int, cosTab, sinTa
 	dim := a.dim
 	qDim := a.heads * a.headDim
 	kvDim := a.kvHeads * a.headDim
-	matmulHalfInto(s.q[:seq*qDim], in[:seq*dim], a.wq, seq, dim, qDim)
-	matmulHalfInto(s.k[:seq*kvDim], in[:seq*dim], a.wk, seq, dim, kvDim)
-	matmulHalfInto(s.v[:seq*kvDim], in[:seq*dim], a.wv, seq, dim, kvDim)
-	matmulHalfInto(s.gateBuf[:seq*dim], in[:seq*dim], a.gate, seq, dim, dim)
+	a.wq.mul(s.q[:seq*qDim], in[:seq*dim], seq)
+	a.wk.mul(s.k[:seq*kvDim], in[:seq*dim], seq)
+	a.wv.mul(s.v[:seq*kvDim], in[:seq*dim], seq)
+	a.gate.mul(s.gateBuf[:seq*dim], in[:seq*dim], seq)
 
 	half := a.headDim / 2
 	parallelRows(seq, func(from, to int) {
@@ -569,19 +569,19 @@ func attnForward(a *ditAttn, s *ditScratch, in []float32, seq int, cosTab, sinTa
 			s.attnOut[i] *= sigmoid(s.gateBuf[i])
 		}
 	})
-	matmulHalfInto(s.proj[:seq*dim], s.attnOut[:seq*qDim], a.wo, seq, qDim, dim)
+	a.wo.mul(s.proj[:seq*dim], s.attnOut[:seq*qDim], seq)
 }
 
 func ffForward(f *ditFF, s *ditScratch, in []float32, seq int) {
-	matmulHalfInto(s.ffGate[:seq*f.ffn], in[:seq*f.dim], f.gate, seq, f.dim, f.ffn)
-	matmulHalfInto(s.ffUp[:seq*f.ffn], in[:seq*f.dim], f.up, seq, f.dim, f.ffn)
+	f.gate.mul(s.ffGate[:seq*f.ffn], in[:seq*f.dim], seq)
+	f.up.mul(s.ffUp[:seq*f.ffn], in[:seq*f.dim], seq)
 	parallelRows(seq, func(from, to int) {
 		for i := from * f.ffn; i < to*f.ffn; i++ {
 			g := float64(s.ffGate[i])
 			s.ffGate[i] = float32(g/(1+math.Exp(-g))) * s.ffUp[i]
 		}
 	})
-	matmulHalfInto(s.proj[:seq*f.dim], s.ffGate[:seq*f.ffn], f.down, seq, f.ffn, f.dim)
+	f.down.mul(s.proj[:seq*f.dim], s.ffGate[:seq*f.ffn], seq)
 }
 
 // applyHeadNormRopeInterleaved: zero-centered per-head RMSNorm then FLUX-style
