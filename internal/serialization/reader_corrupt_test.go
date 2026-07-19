@@ -152,7 +152,11 @@ func TestLoadTensor_CorruptTensor(t *testing.T) {
 		wantSub string
 	}{
 		{"unsupported dtype", oneTensorHeader("float16", []int{2, 2}, 16), make([]byte, 16), "unsupported dtype"},
-		{"invalid shape", oneTensorHeader(DTypeFloat32, []int{2, 0}, 0), nil, "invalid shape"},
+		{
+			// Zero-dim shapes are deliberately LEGAL (empty-tensor support for
+			// ONNX; see tensor.Shape.Validate) — a corrupt shape means a
+			// negative dimension.
+			"invalid shape", oneTensorHeader(DTypeFloat32, []int{2, -1}, 0), nil, "invalid shape"},
 	}
 
 	for _, tt := range tests {
@@ -211,7 +215,7 @@ func TestReadFrom_CorruptStream(t *testing.T) {
 		{"malformed header JSON", append(v1Prefix(0, 5), []byte("hello")...), "failed to parse header JSON"},
 		{"padding truncated", v1TruncatedPadding(t, oneTensorHeader(DTypeFloat32, []int{2, 2}, 16)), "failed to read padding"},
 		{"unsupported dtype", wellFormedV1(t, oneTensorHeader("float16", []int{2, 2}, 16), make([]byte, 16)), "unsupported dtype"},
-		{"invalid shape", wellFormedV1(t, oneTensorHeader(DTypeFloat32, []int{2, 0}, 0), nil), "invalid shape"},
+		{"invalid shape", wellFormedV1(t, oneTensorHeader(DTypeFloat32, []int{2, -1}, 0), nil), "invalid shape"}, // negative dim: zero dims are legal (empty tensors)
 		{"truncated tensor data", wellFormedV1(t, oneTensorHeader(DTypeFloat32, []int{2, 2}, 16), make([]byte, 8)), "failed to read tensor weight"},
 	}
 
