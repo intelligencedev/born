@@ -36,6 +36,21 @@ Python, zero ONNX runtime at inference time.
 | VAE decode 512² | 34 s | naive conv loops |
 | THE RUN (f16 DiT, sequential loads) | **2 h 38 m total; ~18 min/DiT step** | peak RSS 43 GB, **zero swaps**; 512², 8 steps, seed 42 |
 
+### Perf sprint (2026-07-19, oracle-tested rounds)
+
+| Round | Change | Result |
+| --- | --- | --- |
+| baseline | naive row-parallel f16 matmul | 43.7 GFLOPS (bench), ~18 min/step |
+| 1 | token-tiled matmul (weight rows L1-hot across 64-token tiles) | 71.7 GFLOPS |
+| 2 | 4×4 register kernel (16 FMAs/store, f16 decode serves 4 tokens) | **145 GFLOPS**, 12B step **5 m 33 s** |
+| (3) | 8×4 kernel | 117 GFLOPS — register spills, REVERTED |
+| 4 | parallel elementwise (norms/modulate/gates/SwiGLU/rope) | 12B step **5 m 07 s** |
+
+Net: **3.5× per step (18 min → 5m07s)**; projected e2e ~44 min. Full-weight
+parity with f16 storage: 4.8e-3 (gate 2e-2; f32 reference remains 2.3e-4).
+~145 GFLOPS is near the Go-compiler scalar ceiling (no auto-vectorization);
+the next tiers are NEON asm kernels, on-the-fly Q4_K matmul, and WebGPU.
+
 Optimization headroom (per the Supertonic playbook, none applied yet beyond
 row-parallelism): register-tiled/blocked matmul, im2col conv, on-the-fly
 dequant (skip the f32/f16 intermediate entirely and matmul straight from
