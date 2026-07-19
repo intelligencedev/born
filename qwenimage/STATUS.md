@@ -46,10 +46,29 @@ Python, zero ONNX runtime at inference time.
 | (3) | 8×4 kernel | 117 GFLOPS — register spills, REVERTED |
 | 4 | parallel elementwise (norms/modulate/gates/SwiGLU/rope) | 12B step **5 m 07 s** |
 
-Net: **3.5× per step (18 min → 5m07s)**; projected e2e ~44 min. Full-weight
-parity with f16 storage: 4.8e-3 (gate 2e-2; f32 reference remains 2.3e-4).
-~145 GFLOPS is near the Go-compiler scalar ceiling (no auto-vectorization);
-the next tiers are NEON asm kernels, on-the-fly Q4_K matmul, and WebGPU.
+Net CPU rounds: **3.5× per step (18 min → 5m07s)**. Full-weight parity with
+f16 storage: 4.8e-3 (gate 2e-2; f32 reference remains 2.3e-4). ~145 GFLOPS
+is near the Go-compiler scalar ceiling (no auto-vectorization).
+
+### GPU rounds (2026-07-19 — pure-Go Metal via gogpu/wgpu, zero CGO)
+
+born's webgpu backend tags exclude darwin, but wgpu's Metal HAL works
+(FFI via goffi/objc). Probe → integration:
+
+| Round | Change | Result |
+| --- | --- | --- |
+| 5 | naive 16×16-tile WGSL GEMM, f16 weights packed u32 | 285 GFLOPS |
+| 6 | 4×4 register-blocked 64×64 tiles | **1667 GFLOPS** (probe) |
+| 7 | DiT projections through device-resident weights (`mat` type, CPU copies freed → Go heap 1.3 GB) | 12B step **1 m 05 s**, parity 5.0e-3 |
+| 8 | batched text-fusion projections (was 512 concurrent per-token GPU calls — also fixed an FFI-hostile pattern) | included above |
+
+Net: **17× per step (18 min → 1m05s)**; projected e2e ~12 min. Remaining
+step time ≈ CPU attention (~20 s) + elementwise + transfers — attention as
+batched GPU GEMM is the next lever (est. step ~30-40 s, e2e ~6 min).
+
+Known wgpu issues: rare cold-start native fault (retry-once mitigates;
+upstream issue worth filing) and `checkptr` violations inside wgpu's FFI
+under `-race` (GPU path must be disabled via QWENIMAGE_GPU=0 in race runs).
 
 Optimization headroom (per the Supertonic playbook, none applied yet beyond
 row-parallelism): register-tiled/blocked matmul, im2col conv, on-the-fly
