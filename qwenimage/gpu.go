@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -126,7 +127,7 @@ type gpuEngine struct {
 	bgl      *wgpu.BindGroupLayout
 	pipeline *wgpu.ComputePipeline
 
-	mu      sync.Mutex // wgpu calls serialized per engine
+	work    chan func() // executes ALL wgpu calls on one locked OS thread
 	xBuf    *wgpu.Buffer
 	oBuf    *wgpu.Buffer
 	sBuf    *wgpu.Buffer
@@ -155,13 +156,41 @@ func getGPU() *gpuEngine {
 			gpuErr = fmt.Errorf("disabled via QWENIMAGE_GPU=0")
 			return
 		}
-		gpuEng, gpuErr = newGPUEngine()
+		work := make(chan func(), 16)
+		go func() {
+			runtime.LockOSThread()
+			for fn := range work {
+				fn()
+			}
+		}()
+		done := make(chan struct{})
+		work <- func() {
+			gpuEng, gpuErr = newGPUEngine()
+			if gpuEng != nil {
+				gpuEng.work = work
+			}
+			close(done)
+		}
+		<-done
 		if gpuErr != nil {
 			fmt.Fprintf(os.Stderr, "qwenimage: GPU unavailable (%v); using CPU\n", gpuErr)
 			gpuEng = nil
 		}
 	})
 	return gpuEng
+}
+
+// run executes fn on the engine's dedicated OS thread and waits. Metal via
+// objc FFI is sensitive to thread migration (autorelease pools are
+// per-thread); calls from arbitrary goroutines caused use-after-free faults
+// (poison-pattern registers) under goroutine churn.
+func (e *gpuEngine) run(fn func()) {
+	done := make(chan struct{})
+	e.work <- func() {
+		fn()
+		close(done)
+	}
+	<-done
 }
 
 func newGPUEngine() (*gpuEngine, error) {
@@ -213,9 +242,12 @@ func newGPUEngine() (*gpuEngine, error) {
 // uploadWeights creates a device-resident buffer holding w (f16 bits,
 // row-major [in, out]) and returns it. len(w) must be even (out is even for
 // every Krea matrix).
-func (e *gpuEngine) uploadWeights(w halfMat) (*wgpu.Buffer, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *gpuEngine) uploadWeights(w halfMat) (buf *wgpu.Buffer, err error) {
+	e.run(func() { buf, err = e.uploadWeightsLocked(w) })
+	return buf, err
+}
+
+func (e *gpuEngine) uploadWeightsLocked(w halfMat) (*wgpu.Buffer, error) {
 	buf, err := e.device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "w", Size: uint64(len(w) * 2),
 		Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst,
@@ -274,10 +306,12 @@ func (e *gpuEngine) ensureScratch(xSize, oSize uint64) error {
 }
 
 // matmul computes dst[seq, out] = x[seq, in] · W for a device-resident W.
-func (e *gpuEngine) matmul(dst, x []float32, wBuf *wgpu.Buffer, wSize uint64, seq, in, out int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *gpuEngine) matmul(dst, x []float32, wBuf *wgpu.Buffer, wSize uint64, seq, in, out int) (err error) {
+	e.run(func() { err = e.matmulLocked(dst, x, wBuf, wSize, seq, in, out) })
+	return err
+}
 
+func (e *gpuEngine) matmulLocked(dst, x []float32, wBuf *wgpu.Buffer, wSize uint64, seq, in, out int) error {
 	xSize := uint64(len(x) * 4)
 	oSize := uint64(seq*out) * 4
 	if err := e.ensureScratch(xSize, oSize); err != nil {
