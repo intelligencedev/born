@@ -129,6 +129,13 @@ type Backend interface {
 	Device() Device
 }
 
+// Conv1DBackend is an optional accelerator capability used by ONNX Conv nodes
+// with NCL input. It is separate from Backend so existing backends do not need
+// to implement a kernel they cannot accelerate.
+type Conv1DBackend interface {
+	Conv1D(input, kernel, bias *RawTensor, stride, padLeft, padRight, dilation, groups int) (*RawTensor, error)
+}
+
 // MemoryReclaimer is an optional interface for backends that manage GPU or
 // device memory. When implemented, callers can explicitly reclaim unreferenced
 // buffers at well-defined lifecycle points (e.g. after Tape.Clear) instead

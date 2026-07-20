@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
@@ -7,10 +7,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"runtime"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // compileShader compiles WGSL shader code into a ShaderModule.
@@ -18,6 +19,9 @@ import (
 // Panics on failure because all shaders are statically embedded and compilation
 // failure indicates a programming error, not a runtime condition.
 func (b *Backend) compileShader(name, code string) *wgpu.ShaderModule {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	b.mu.RLock()
 	if shader, exists := b.shaders[name]; exists {
 		b.mu.RUnlock()
@@ -48,6 +52,9 @@ func (b *Backend) compileShader(name, code string) *wgpu.ShaderModule {
 //
 // Panics on failure because pipelines use statically embedded shaders.
 func (b *Backend) getOrCreatePipeline(name string, shader *wgpu.ShaderModule, entries []gputypes.BindGroupLayoutEntry) pipelineEntry {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	b.mu.RLock()
 	if entry, exists := b.pipelines[name]; exists {
 		b.mu.RUnlock()
@@ -123,6 +130,9 @@ func bglUniform(binding uint32) gputypes.BindGroupLayoutEntry {
 //
 // Panics on failure since all bind groups use validated pipeline layouts.
 func (b *Backend) createBindGroupFromBuffers(layout *wgpu.BindGroupLayout, bufs []bindGroupBuffer) *wgpu.BindGroup {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	entries := make([]wgpu.BindGroupEntry, len(bufs))
 	for i, buf := range bufs {
 		entries[i] = wgpu.BindGroupEntry{
@@ -164,6 +174,9 @@ func bufBinding(buf *wgpu.Buffer, size uint64) bindGroupBuffer {
 //
 //nolint:unparam // z is always 1 currently but kept for future 3D workgroup dispatch support
 func (b *Backend) execComputePass(pipeline *wgpu.ComputePipeline, bg *wgpu.BindGroup, x, y, z uint32) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	encoder, err := b.device.CreateCommandEncoder(nil)
 	if err != nil {
 		panic(fmt.Sprintf("webgpu: failed to create command encoder: %v", err))
@@ -211,6 +224,9 @@ func (b *Backend) execComputeAndRead(
 	resultBuf *wgpu.Buffer,
 	resultSize uint64,
 ) []byte {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Flush any active encoder batch before issuing a synchronous submit.
 	// Without this, the active encoder's resources may still reference buffers
 	// that we are about to read or reuse, causing validation errors.
@@ -277,6 +293,9 @@ func (b *Backend) execComputeAndRead(
 // createBuffer creates a GPU buffer and uploads initial data via MappedAtCreation.
 // Panics on failure because all buffers use validated sizes from tensor data.
 func (b *Backend) createBuffer(data []byte, usage gputypes.BufferUsage) *wgpu.Buffer {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	size := uint64(len(data))
 
 	buffer, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
@@ -309,6 +328,9 @@ func (b *Backend) createBuffer(data []byte, usage gputypes.BufferUsage) *wgpu.Bu
 // createUniformBuffer creates a uniform buffer with 16-byte alignment.
 // Panics on failure.
 func (b *Backend) createUniformBuffer(data []byte) *wgpu.Buffer {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Ensure 16-byte alignment required by uniform buffers.
 	size := uint64(len(data))
 	alignedSize := (size + 15) &^ 15
@@ -352,6 +374,9 @@ func (b *Backend) createUniformBuffer(data []byte) *wgpu.Buffer {
 // For non-lazy operations (runBinaryOp, runUnaryOp, etc.) use execComputeAndRead()
 // instead, which keeps compute + copy in a single encoder without needing a poll.
 func (b *Backend) readBuffer(srcBuffer *wgpu.Buffer, size uint64) ([]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Flush all pending lazy-mode command buffers.
 	b.flushCommands()
 
@@ -440,8 +465,8 @@ func (b *Backend) runBinaryOp(a, other *tensor.RawTensor, shaderName, shaderCode
 
 	// Handle broadcasting if shapes don't match
 	if !a.Shape().Equal(other.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(a.Shape(), other.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(a.Shape(), other.Shape())
+		if broadcastErr != nil {
 			return nil, fmt.Errorf("webgpu: shapes not broadcastable: %v vs %v", a.Shape(), other.Shape())
 		}
 		if !a.Shape().Equal(broadcastedShape) {
@@ -528,8 +553,8 @@ func (b *Backend) runComparisonOp(a, other *tensor.RawTensor, shaderName, shader
 
 	// Handle broadcasting if shapes don't match
 	if !a.Shape().Equal(other.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(a.Shape(), other.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(a.Shape(), other.Shape())
+		if broadcastErr != nil {
 			return nil, fmt.Errorf("webgpu: shapes not broadcastable: %v vs %v", a.Shape(), other.Shape())
 		}
 		if !a.Shape().Equal(broadcastedShape) {
@@ -941,8 +966,8 @@ func (b *Backend) runSoftmax(input *tensor.RawTensor) (*tensor.RawTensor, error)
 }
 
 // runBatchMatMul executes batched matrix multiplication on GPU.
-// Supports 3D [batch, M, K] @ [batch, K, N] -> [batch, M, N]
-// and 4D [batch, heads, M, K] @ [batch, heads, K, N] -> [batch, heads, M, N].
+// Supports 3D/4D batched inputs with either a matching batched RHS or a shared
+// 2D [K,N] RHS, as required by ONNX MatMul broadcasting.
 func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor, error) {
 	// Validate inputs
 	if a.DType() != tensor.Float32 || other.DType() != tensor.Float32 {
@@ -952,8 +977,10 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 	shapeA := a.Shape()
 	shapeB := other.Shape()
 
-	if len(shapeA) != len(shapeB) || (len(shapeA) != 3 && len(shapeA) != 4) {
-		return nil, fmt.Errorf("webgpu: BatchMatMul requires 3D or 4D tensors with matching dimensions")
+	sharedB := (len(shapeA) == 3 || len(shapeA) == 4) && len(shapeB) == 2
+	matchingBatches := len(shapeA) == len(shapeB) && (len(shapeA) == 3 || len(shapeA) == 4)
+	if !sharedB && !matchingBatches {
+		return nil, fmt.Errorf("webgpu: BatchMatMul unsupported shapes %v and %v", shapeA, shapeB)
 	}
 
 	var batch, M, K, N uint32
@@ -968,7 +995,11 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 
 		K = uint32(shapeA[2]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
 
-		N = uint32(shapeB[2]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		if sharedB {
+			N = uint32(shapeB[1]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		} else {
+			N = uint32(shapeB[2]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		}
 		resultShape = tensor.Shape{int(batch), int(M), int(N)}
 	} else {
 		// 4D: [batch, heads, M, K] @ [batch, heads, K, N]
@@ -980,8 +1011,22 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 
 		K = uint32(shapeA[3]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
 
-		N = uint32(shapeB[3]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		if sharedB {
+			N = uint32(shapeB[1]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		} else {
+			N = uint32(shapeB[3]) //nolint:gosec // G115: safe, tensor dimensions are non-negative and fit in uint32
+		}
 		resultShape = tensor.Shape{shapeA[0], shapeA[1], int(M), int(N)}
+	}
+	if shapeA[len(shapeA)-1] != shapeB[len(shapeB)-2] {
+		return nil, fmt.Errorf("webgpu: BatchMatMul inner dimensions do not match for %v and %v", shapeA, shapeB)
+	}
+	if !sharedB {
+		for i := 0; i < len(shapeA)-2; i++ {
+			if shapeB[i] != 1 && shapeA[i] != shapeB[i] {
+				return nil, fmt.Errorf("webgpu: BatchMatMul RHS batch dimensions cannot broadcast for %v and %v", shapeA, shapeB)
+			}
+		}
 	}
 
 	shader := b.compileShader("batchMatMul", batchMatMulShader)
@@ -1003,11 +1048,26 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 	}
 	defer bufferResult.Release()
 
-	params := make([]byte, 16)
+	params := make([]byte, 32)
 	binary.LittleEndian.PutUint32(params[0:4], batch)
 	binary.LittleEndian.PutUint32(params[4:8], M)
 	binary.LittleEndian.PutUint32(params[8:12], K)
 	binary.LittleEndian.PutUint32(params[12:16], N)
+	if len(shapeA) == 4 {
+		binary.LittleEndian.PutUint32(params[16:20], uint32(shapeA[1])) //nolint:gosec // validated tensor dimensions
+	} else {
+		binary.LittleEndian.PutUint32(params[16:20], 1)
+	}
+	if sharedB {
+		binary.LittleEndian.PutUint32(params[20:24], 1)
+		binary.LittleEndian.PutUint32(params[24:28], 1)
+	} else if len(shapeB) == 4 {
+		binary.LittleEndian.PutUint32(params[20:24], uint32(shapeB[0])) //nolint:gosec // validated tensor dimensions
+		binary.LittleEndian.PutUint32(params[24:28], uint32(shapeB[1])) //nolint:gosec // validated tensor dimensions
+	} else {
+		binary.LittleEndian.PutUint32(params[20:24], uint32(shapeB[0])) //nolint:gosec // validated tensor dimensions
+		binary.LittleEndian.PutUint32(params[24:28], 1)
+	}
 	bufferParams := b.createUniformBuffer(params)
 	defer bufferParams.Release()
 
@@ -1017,7 +1077,7 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 		bufBinding(bufferA, aSize),
 		bufBinding(bufferB, otherSize),
 		bufBinding(bufferResult, resultSize),
-		bufBinding(bufferParams, 16),
+		bufBinding(bufferParams, 32),
 	})
 	defer bg.Release()
 
@@ -1570,8 +1630,8 @@ func (b *Backend) runWhere(condition, x, y *tensor.RawTensor) (*tensor.RawTensor
 
 	// Broadcast condition with x
 	if !condFloat32.Shape().Equal(x.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(condFloat32.Shape(), x.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(condFloat32.Shape(), x.Shape())
+		if broadcastErr != nil {
 			return nil, fmt.Errorf("webgpu: Where condition and x shapes not broadcastable: %v vs %v", condFloat32.Shape(), x.Shape())
 		}
 		outShape = broadcastedShape
@@ -1579,8 +1639,8 @@ func (b *Backend) runWhere(condition, x, y *tensor.RawTensor) (*tensor.RawTensor
 
 	// Broadcast outShape with y
 	if !outShape.Equal(y.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(outShape, y.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(outShape, y.Shape())
+		if broadcastErr != nil {
 			return nil, fmt.Errorf("webgpu: Where output and y shapes not broadcastable: %v vs %v", outShape, y.Shape())
 		}
 		outShape = broadcastedShape

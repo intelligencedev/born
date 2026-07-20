@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu implements the WebGPU backend for GPU-accelerated tensor operations.
 // Uses gogpu/wgpu (github.com/gogpu/wgpu) for pure Go, zero-CGO WebGPU bindings.
@@ -8,16 +8,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
 	"unsafe"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
 	_ "github.com/gogpu/wgpu/hal/allbackends"
 	"github.com/gogpu/wgpu/hal/software"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // pipelineEntry caches a compute pipeline together with its layouts.
@@ -123,8 +124,11 @@ type Backend struct {
 	// optimization: instead of 1 Submit per op (~500 µs each), all pending
 	// command buffers are submitted in a single queue.Submit call when the
 	// first Data() access triggers ReadGPUBuffer.
-	pending   []pendingSubmission
-	pendingMu sync.Mutex
+	pending []pendingSubmission
+	// pendingAllocBytes tracks resources held by finished command buffers that
+	// have not been submitted yet. Protected by pendingMu.
+	pendingAllocBytes uint64
+	pendingMu         sync.Mutex
 
 	// activeBatch accumulates compute passes into a single shared CommandEncoder.
 	// Protected by pendingMu (same lock as pending to avoid ordering issues).
@@ -185,6 +189,12 @@ type Backend struct {
 //	GOGPU_GRAPHICS_API=gl        force OpenGL/ES
 //	GOGPU_GRAPHICS_API=software  software compute — no GPU required (CI, testing)
 func New() (*Backend, error) {
+	// Metal's Objective-C autorelease pools are thread-affine. Pin the native
+	// initialization sequence so the Go scheduler cannot move it between the
+	// pool's creation and drain calls inside gogpu/wgpu.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	api := os.Getenv("GOGPU_GRAPHICS_API")
 
 	if api == "software" {
@@ -328,6 +338,9 @@ func (b *Backend) SetLazyMode(enabled bool) {
 // If there are no pending submissions, this is a fast no-op (single mutex
 // acquire + nil check).
 func (b *Backend) flushCommands() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	b.pendingMu.Lock()
 	// Finish any active encoder first — its command buffer must be in b.pending
 	// before we drain the pending slice below.
@@ -338,6 +351,7 @@ func (b *Backend) flushCommands() {
 	}
 	pending := b.pending
 	b.pending = nil
+	b.pendingAllocBytes = 0
 	b.pendingMu.Unlock()
 
 	// Collect all command buffers for a single Submit call.
@@ -376,6 +390,9 @@ func (b *Backend) flushCommands() {
 // Release releases all WebGPU resources.
 // Must be called when the backend is no longer needed.
 func (b *Backend) Release() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Phase 1: Submit all pending GPU commands so resources are no longer
 	// referenced by command buffers. Releases BindGroups + transient buffers.
 	b.flushCommands()
@@ -686,6 +703,9 @@ func (b *Backend) Embedding(weight, indices *tensor.RawTensor) *tensor.RawTensor
 //  4. CopyBufferToBuffer(resultBuf → staging), Submit, Poll.
 //  5. Map staging, copy bytes to CPU slice, Unmap, release staging.
 func (b *Backend) ReadGPUBuffer(bufferPtr unsafe.Pointer, size uint64) ([]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	b.flushCommands()
 
 	if debugReadGPU {

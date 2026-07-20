@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/intelligencedev/born/internal/backend/cpu"
 	"github.com/intelligencedev/born/internal/tensor"
 )
+
+var integerMathBackend = cpu.New()
 
 // registerMathOps adds math operators to the registry.
 func (r *Registry) registerMathOps() {
@@ -80,7 +83,11 @@ func handleAdd(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("add requires 2 inputs, got %d", len(inputs))
 	}
-	result := ctx.Backend.Add(inputs[0], inputs[1])
+	backend := ctx.Backend
+	if inputs[0].DType() == tensor.Int64 && inputs[1].DType() == tensor.Int64 {
+		backend = integerMathBackend
+	}
+	result := backend.Add(inputs[0], inputs[1])
 	return []*tensor.RawTensor{result}, nil
 }
 
@@ -88,7 +95,11 @@ func handleSub(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("sub requires 2 inputs, got %d", len(inputs))
 	}
-	result := ctx.Backend.Sub(inputs[0], inputs[1])
+	backend := ctx.Backend
+	if inputs[0].DType() == tensor.Int64 && inputs[1].DType() == tensor.Int64 {
+		backend = integerMathBackend
+	}
+	result := backend.Sub(inputs[0], inputs[1])
 	return []*tensor.RawTensor{result}, nil
 }
 
@@ -96,7 +107,11 @@ func handleMul(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("mul requires 2 inputs, got %d", len(inputs))
 	}
-	result := ctx.Backend.Mul(inputs[0], inputs[1])
+	backend := ctx.Backend
+	if inputs[0].DType() == tensor.Int64 && inputs[1].DType() == tensor.Int64 {
+		backend = integerMathBackend
+	}
+	result := backend.Mul(inputs[0], inputs[1])
 	return []*tensor.RawTensor{result}, nil
 }
 
@@ -104,7 +119,11 @@ func handleDiv(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("div requires 2 inputs, got %d", len(inputs))
 	}
-	result := ctx.Backend.Div(inputs[0], inputs[1])
+	backend := ctx.Backend
+	if inputs[0].DType() == tensor.Int64 && inputs[1].DType() == tensor.Int64 {
+		backend = integerMathBackend
+	}
+	result := backend.Div(inputs[0], inputs[1])
 	return []*tensor.RawTensor{result}, nil
 }
 

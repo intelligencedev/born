@@ -483,7 +483,7 @@ func handleBatchNorm(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 // stride, asymmetric padding, dilation, and grouped/depthwise support. Weight is
 // [C_out, C_in/group, kL]; optional bias is [C_out]. Naive direct convolution
 // (correctness first).
-func handleConv1D(node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleConv1D(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 2 || inputs[0] == nil || inputs[1] == nil {
 		return nil, fmt.Errorf("conv1d: requires x and w inputs")
 	}
@@ -528,6 +528,21 @@ func handleConv1D(node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, 
 	lout := (l+padBegin+padEnd-dilation*(kL-1)-1)/stride + 1
 	if lout < 0 {
 		lout = 0
+	}
+
+	// Keep the convolution resident on accelerators that provide a native 1-D
+	// kernel. This is intentionally an optional capability so CPU and third-party
+	// backends retain the optimized host implementation below.
+	if convBackend, ok := ctx.Backend.(tensor.Conv1DBackend); ok {
+		var bias *tensor.RawTensor
+		if len(inputs) >= 3 && inputs[2] != nil && inputs[2].NumElements() > 0 {
+			bias = inputs[2]
+		}
+		out, err := convBackend.Conv1D(x, w, bias, stride, padBegin, padEnd, dilation, group)
+		if err != nil {
+			return nil, fmt.Errorf("conv1d: backend: %w", err)
+		}
+		return []*tensor.RawTensor{out}, nil
 	}
 
 	var bias []float32

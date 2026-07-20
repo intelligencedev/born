@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu implements the WebGPU backend for GPU-accelerated tensor operations.
 package webgpu
@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	wgpu "github.com/gogpu/wgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // TestDeferredStaging_NoStagingDuringOps verifies that chaining 100 lazy Add
@@ -90,7 +90,7 @@ func TestDeferredStaging_DirectStorageBinding(t *testing.T) {
 
 	// The activeBatch should have accumulated ops (count > 0 means not yet flushed).
 	batchCount := backend.activeBatchCount()
-	if batchCount < 1 {
+	if !separateEncoderPerPass && batchCount < 1 {
 		t.Errorf("expected activeBatch.count >= 1 after 2 Add ops, got %d", batchCount)
 	}
 
@@ -272,6 +272,9 @@ func TestDeferredStaging_MemoryBounded(t *testing.T) {
 // entire point of deferred staging — without it, each op forced a flush because
 // the staging copy required a separate encoder+submit cycle.
 func TestDeferredStaging_SharedEncoderBatches(t *testing.T) {
+	if separateEncoderPerPass {
+		t.Skip("Metal requires a command-buffer boundary between compute passes")
+	}
 	if !IsAvailable() {
 		t.Skip("WebGPU not available")
 	}
@@ -344,7 +347,7 @@ func TestDeferredStaging_MixedLazyAndCPU(t *testing.T) {
 
 	// Both ops should be in the same encoder batch.
 	batchCount := backend.activeBatchCount()
-	if batchCount < 2 {
+	if !separateEncoderPerPass && batchCount < 2 {
 		t.Errorf("expected at least 2 ops in encoder batch, got %d — flush injected between ops", batchCount)
 	}
 

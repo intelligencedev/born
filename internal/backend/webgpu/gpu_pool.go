@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -74,6 +75,9 @@ func (p *ExclusivePool) Accept(size uint64) bool {
 // Acquire returns a GPU buffer of at least `size` bytes.
 // Reuses a free page if available, otherwise allocates a new one.
 func (p *ExclusivePool) Acquire(size uint64) (*wgpu.Buffer, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

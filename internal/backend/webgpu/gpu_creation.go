@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
@@ -8,8 +8,8 @@ import (
 	"math/rand"
 	"unsafe"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // FromRawTensor uploads a CPU tensor to GPU memory.

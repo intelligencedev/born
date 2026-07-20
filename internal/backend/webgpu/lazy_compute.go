@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu implements the WebGPU backend for GPU-accelerated tensor operations.
 package webgpu
@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // getEnvIntOr reads an integer environment variable, returning defaultVal if unset or invalid.
@@ -70,8 +70,8 @@ func (b *Backend) runBinaryOpLazy(a, other *tensor.RawTensor, shaderName, shader
 
 	// Handle broadcasting if shapes don't match
 	if !a.Shape().Equal(other.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(a.Shape(), other.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(a.Shape(), other.Shape())
+		if broadcastErr != nil {
 			return nil, errBroadcastFailed(a.Shape(), other.Shape())
 		}
 		// Expand tensors to broadcasted shape
@@ -174,6 +174,9 @@ var maxPendingBeforeFlush = getEnvIntOr("BORN_MAX_TASKS", 64)
 // copyGPUBuffer creates a GPU-to-GPU copy without CPU round-trip.
 // This is critical for LazyMode performance - avoids GPU→CPU→GPU transfers.
 func (b *Backend) copyGPUBuffer(srcBuffer *wgpu.Buffer, size uint64) *wgpu.Buffer {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Flush pending commands first — srcBuffer may be a staging buffer from a
 	// lazy op whose command buffer hasn't been submitted yet. Without this
 	// flush, CopyBufferToBuffer would read uninitialized staging data.
@@ -240,8 +243,8 @@ func errUnsupportedDType(dtype tensor.DataType) error {
 	return &lazyError{msg: "unsupported dtype: " + dtype.String() + " (only float32 and int32)"}
 }
 
-func errBroadcastFailed(_, _ tensor.Shape) error {
-	return &lazyError{msg: "shapes not broadcastable"}
+func errBroadcastFailed(a, other tensor.Shape) error {
+	return &lazyError{msg: fmt.Sprintf("shapes %v and %v are not broadcastable", a, other)}
 }
 
 type lazyError struct {
@@ -451,7 +454,8 @@ func putFloat32LE(b []byte, v float32) {
 }
 
 // runBatchMatMulLazy executes batched matrix multiplication on GPU with lazy result.
-// Supports 3D [batch, M, K] @ [batch, K, N] and 4D [batch, heads, M, K] @ [batch, heads, K, N].
+// Supports 3D/4D batched inputs with either a matching batched RHS or a shared
+// 2D [K,N] RHS, as required by ONNX MatMul broadcasting.
 func (b *Backend) runBatchMatMulLazy(a, other *tensor.RawTensor) (*tensor.RawTensor, error) {
 	// Validate inputs
 	if a.DType() != tensor.Float32 || other.DType() != tensor.Float32 {
@@ -461,8 +465,10 @@ func (b *Backend) runBatchMatMulLazy(a, other *tensor.RawTensor) (*tensor.RawTen
 	shapeA := a.Shape()
 	shapeB := other.Shape()
 
-	if len(shapeA) != len(shapeB) || (len(shapeA) != 3 && len(shapeA) != 4) {
-		return nil, &lazyError{msg: "batchMatMul: requires 3D or 4D tensors with matching dimensions"}
+	sharedB := (len(shapeA) == 3 || len(shapeA) == 4) && len(shapeB) == 2
+	matchingBatches := len(shapeA) == len(shapeB) && (len(shapeA) == 3 || len(shapeA) == 4)
+	if !sharedB && !matchingBatches {
+		return nil, &lazyError{msg: fmt.Sprintf("batchMatMul: unsupported shapes %v and %v", shapeA, shapeB)}
 	}
 
 	var batch, M, K, N uint32
@@ -473,15 +479,33 @@ func (b *Backend) runBatchMatMulLazy(a, other *tensor.RawTensor) (*tensor.RawTen
 		batch = uint32(shapeA[0]) //nolint:gosec // G115: safe, tensor dims are small positive ints
 		M = uint32(shapeA[1])     //nolint:gosec // G115: safe, tensor dims are small positive ints
 		K = uint32(shapeA[2])     //nolint:gosec // G115: safe, tensor dims are small positive ints
-		N = uint32(shapeB[2])     //nolint:gosec // G115: safe, tensor dims are small positive ints
+		if sharedB {
+			N = uint32(shapeB[1]) //nolint:gosec // G115: safe, tensor dims are small positive ints
+		} else {
+			N = uint32(shapeB[2]) //nolint:gosec // G115: safe, tensor dims are small positive ints
+		}
 		resultShape = tensor.Shape{int(batch), int(M), int(N)}
 	} else {
 		// 4D: [batch, heads, M, K] @ [batch, heads, K, N]
 		batch = uint32(shapeA[0] * shapeA[1]) //nolint:gosec // G115: safe, product of small tensor dims
 		M = uint32(shapeA[2])                 //nolint:gosec // G115: safe, tensor dims are small positive ints
 		K = uint32(shapeA[3])                 //nolint:gosec // G115: safe, tensor dims are small positive ints
-		N = uint32(shapeB[3])                 //nolint:gosec // G115: safe, tensor dims are small positive ints
+		if sharedB {
+			N = uint32(shapeB[1]) //nolint:gosec // G115: safe, tensor dims are small positive ints
+		} else {
+			N = uint32(shapeB[3]) //nolint:gosec // G115: safe, tensor dims are small positive ints
+		}
 		resultShape = tensor.Shape{shapeA[0], shapeA[1], int(M), int(N)}
+	}
+	if shapeA[len(shapeA)-1] != shapeB[len(shapeB)-2] {
+		return nil, &lazyError{msg: fmt.Sprintf("batchMatMul: inner dimensions do not match for %v and %v", shapeA, shapeB)}
+	}
+	if !sharedB {
+		for i := 0; i < len(shapeA)-2; i++ {
+			if shapeB[i] != 1 && shapeA[i] != shapeB[i] {
+				return nil, &lazyError{msg: fmt.Sprintf("batchMatMul: RHS batch dimensions cannot broadcast for %v and %v", shapeA, shapeB)}
+			}
+		}
 	}
 
 	shader := b.compileShader("batchMatMul", batchMatMulShader)
@@ -514,11 +538,26 @@ func (b *Backend) runBatchMatMulLazy(a, other *tensor.RawTensor) (*tensor.RawTen
 	}
 
 	// Create uniform buffer for params. Ownership transfers to addComputePassToEncoder.
-	params := make([]byte, 16)
+	params := make([]byte, 32)
 	putUint32LE(params[0:4], batch)
 	putUint32LE(params[4:8], M)
 	putUint32LE(params[8:12], K)
 	putUint32LE(params[12:16], N)
+	if len(shapeA) == 4 {
+		putUint32LE(params[16:20], uint32(shapeA[1])) //nolint:gosec // validated tensor dimensions
+	} else {
+		putUint32LE(params[16:20], 1)
+	}
+	if sharedB {
+		putUint32LE(params[20:24], 1)
+		putUint32LE(params[24:28], 1)
+	} else if len(shapeB) == 4 {
+		putUint32LE(params[20:24], uint32(shapeB[0])) //nolint:gosec // validated tensor dimensions
+		putUint32LE(params[24:28], uint32(shapeB[1])) //nolint:gosec // validated tensor dimensions
+	} else {
+		putUint32LE(params[20:24], uint32(shapeB[0])) //nolint:gosec // validated tensor dimensions
+		putUint32LE(params[24:28], 1)
+	}
 	bufferParams := b.createUniformBuffer(params)
 
 	sizeA := uint64(a.ByteSize())     //nolint:gosec // G115: integer overflow conversion int -> uint64
@@ -527,7 +566,7 @@ func (b *Backend) runBatchMatMulLazy(a, other *tensor.RawTensor) (*tensor.RawTen
 		bufBinding(inputA.buffer, sizeA),
 		bufBinding(inputB.buffer, sizeB),
 		bufBinding(bufferResult, resultSize),
-		bufBinding(bufferParams, 16),
+		bufBinding(bufferParams, 32),
 	})
 	// NO defer bg.Release() — ownership transfers to encoder batch via lazyResources.
 
@@ -1079,8 +1118,8 @@ func (b *Backend) runWhereLazy(condition, x, y *tensor.RawTensor) (*tensor.RawTe
 
 	// Broadcast condition with x
 	if !condFloat32.Shape().Equal(x.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(condFloat32.Shape(), x.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(condFloat32.Shape(), x.Shape())
+		if broadcastErr != nil {
 			return nil, errBroadcastFailed(condFloat32.Shape(), x.Shape())
 		}
 		outShape = broadcastedShape
@@ -1088,8 +1127,8 @@ func (b *Backend) runWhereLazy(condition, x, y *tensor.RawTensor) (*tensor.RawTe
 
 	// Broadcast outShape with y
 	if !outShape.Equal(y.Shape()) {
-		broadcastedShape, ok, _ := tensor.BroadcastShapes(outShape, y.Shape())
-		if !ok {
+		broadcastedShape, _, broadcastErr := tensor.BroadcastShapes(outShape, y.Shape())
+		if broadcastErr != nil {
 			return nil, errBroadcastFailed(outShape, y.Shape())
 		}
 		outShape = broadcastedShape
@@ -1634,7 +1673,6 @@ func (b *Backend) runSumDimLazy(x *tensor.RawTensor, dim int, keepDim bool) (*te
 	if x.DType() != tensor.Float32 {
 		return nil, &lazyError{msg: "sumDim: only float32 is supported"}
 	}
-
 	shape := x.Shape()
 	ndim := len(shape)
 

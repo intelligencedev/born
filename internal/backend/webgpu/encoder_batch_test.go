@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
@@ -240,7 +240,7 @@ func TestEncoderBatch_AccumulatesMultiplePasses(t *testing.T) {
 	}
 
 	count := backend.activeBatchCount()
-	if count == 0 {
+	if !separateEncoderPerPass && count == 0 {
 		t.Errorf("activeBatchCount() = 0; expected %d passes accumulated in encoder", opsToAccumulate)
 	}
 
@@ -279,7 +279,7 @@ func TestEncoderBatch_FlushClearsActiveBatch(t *testing.T) {
 	result := backend.Add(a, a)
 
 	// Before readback: batch should have 1 pass.
-	if backend.activeBatchCount() == 0 {
+	if !separateEncoderPerPass && backend.activeBatchCount() == 0 {
 		t.Error("activeBatchCount() = 0 before readback; expected at least 1")
 	}
 

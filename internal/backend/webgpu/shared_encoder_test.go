@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
@@ -22,6 +22,9 @@ import (
 func TestSharedEncoder_MultipleOpsOneEncoder(t *testing.T) {
 	if !IsAvailable() {
 		t.Skip("WebGPU not available")
+	}
+	if separateEncoderPerPass {
+		t.Skip("backend submits each pass separately on this platform")
 	}
 
 	backend, err := New()
@@ -232,7 +235,7 @@ func TestSharedEncoder_FlushOnReadback(t *testing.T) {
 	result := backend.Mul(a, a) // 2*2=4, 4*4=16, 6*6=36, 8*8=64
 
 	// Before readback: at least one pending op.
-	if backend.activeBatchCount() == 0 {
+	if !separateEncoderPerPass && backend.activeBatchCount() == 0 {
 		// It's possible auto-flush already ran (if maxPendingBeforeFlush == 1),
 		// but that threshold is guaranteed > 1 by TestAutoFlush_Threshold.
 		t.Error("activeBatchCount() == 0 before Data(); expected pending op")

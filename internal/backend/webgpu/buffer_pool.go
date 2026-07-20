@@ -1,8 +1,9 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 package webgpu
 
 import (
+	"runtime"
 	"sync"
 
 	"github.com/gogpu/gputypes"
@@ -67,6 +68,9 @@ func NewBufferPool(device *wgpu.Device) *BufferPool {
 // Acquire gets a buffer from the pool or creates a new one.
 // Returns a buffer that matches or exceeds the requested size and usage.
 func (p *BufferPool) Acquire(size uint64, usage gputypes.BufferUsage) *wgpu.Buffer {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

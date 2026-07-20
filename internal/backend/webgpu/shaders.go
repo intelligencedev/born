@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu provides embedded WGSL compute shaders for tensor operations.
 package webgpu
@@ -592,6 +592,9 @@ struct Params {
     M: u32,
     K: u32,
     N: u32,
+    out_heads: u32,
+    b_dim0: u32,
+    b_dim1: u32,
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
@@ -606,7 +609,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let a_batch_offset = batch_idx * params.M * params.K;
-    let b_batch_offset = batch_idx * params.K * params.N;
+    let out_dim0_index = batch_idx / params.out_heads;
+    let out_dim1_index = batch_idx % params.out_heads;
+    let b_dim0_index = select(out_dim0_index, 0u, params.b_dim0 == 1u);
+    let b_dim1_index = select(out_dim1_index, 0u, params.b_dim1 == 1u);
+    let b_batch_index = b_dim0_index * params.b_dim1 + b_dim1_index;
+    let b_batch_offset = b_batch_index * params.K * params.N;
     let c_batch_offset = batch_idx * params.M * params.N;
 
     var sum: f32 = 0.0;

@@ -5,7 +5,48 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/intelligencedev/born/backend/cpu"
 )
+
+func TestBackendNameAndClose(t *testing.T) {
+	releaseCalls := 0
+	tts := &TTS{
+		backend: cpu.New(),
+		release: func() { releaseCalls++ },
+	}
+	if got := tts.BackendName(); got != "CPU" {
+		t.Fatalf("BackendName() = %q, want CPU", got)
+	}
+	tts.Close()
+	tts.Close()
+	if releaseCalls != 1 {
+		t.Fatalf("release called %d times, want 1", releaseCalls)
+	}
+}
+
+func TestSynthesizeCPUFinite(t *testing.T) {
+	modelDir := os.Getenv("SUPERTONIC_MODEL_DIR")
+	if modelDir == "" {
+		t.Skip("set SUPERTONIC_MODEL_DIR")
+	}
+	tts, err := newWithBackend(modelDir, cpu.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples, err := tts.Synthesize("Hi.", "M1", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) == 0 {
+		t.Fatal("synthesis returned no samples")
+	}
+	for i, sample := range samples {
+		if math.IsNaN(float64(sample)) || math.IsInf(float64(sample), 0) {
+			t.Fatalf("sample %d is not finite: %v", i, sample)
+		}
+	}
+}
 
 func TestPreprocessAndTokenize(t *testing.T) {
 	md := os.Getenv("SUPERTONIC_MODEL_DIR")

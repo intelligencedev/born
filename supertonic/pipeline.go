@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/intelligencedev/born/backend/cpu"
 	"github.com/intelligencedev/born/internal/tensor"
@@ -21,6 +23,10 @@ type TTS struct {
 	vocoder   onnx.Model
 	modelDir  string
 	styles    map[string]VoiceStyle
+	backend   tensor.Backend
+	release   func()
+	closeOnce sync.Once
+	synthMu   sync.Mutex
 }
 
 // Options configures a synthesis call. Zero values fall back to the defaults
@@ -38,6 +44,18 @@ type Options struct {
 
 // New loads the config, tokenizer, and the 4 ONNX graphs from modelDir.
 func New(modelDir string) (*TTS, error) {
+	if preferred, release, err := preferredBackend(); err == nil {
+		tts, loadErr := newWithBackend(modelDir, preferred)
+		if loadErr == nil {
+			tts.release = release
+			return tts, nil
+		}
+		release()
+	}
+	return newWithBackend(modelDir, cpu.New())
+}
+
+func newWithBackend(modelDir string, backend tensor.Backend) (*TTS, error) {
 	cfg, err := loadConfig(modelDir)
 	if err != nil {
 		return nil, err
@@ -46,7 +64,6 @@ func New(modelDir string) (*TTS, error) {
 	if err != nil {
 		return nil, err
 	}
-	backend := cpu.New()
 	opts := onnx.DefaultLoadOptions()
 	opts.StrictMode = true
 	load := func(name string) (onnx.Model, error) {
@@ -70,12 +87,32 @@ func New(modelDir string) (*TTS, error) {
 	}
 	return &TTS{
 		cfg: cfg, indexer: indexer, dp: dp, textEnc: te, vectorEst: ve,
-		vocoder: voc, modelDir: modelDir, styles: map[string]VoiceStyle{},
+		vocoder: voc, modelDir: modelDir, styles: map[string]VoiceStyle{}, backend: backend,
 	}, nil
 }
 
 // SampleRate returns the output sample rate (Hz).
 func (t *TTS) SampleRate() int { return t.cfg.SampleRate }
+
+// BackendName reports the compute backend selected for inference.
+func (t *TTS) BackendName() string {
+	if t.backend == nil {
+		return ""
+	}
+	return t.backend.Name()
+}
+
+// Close releases accelerator resources owned by the pipeline. It is safe to
+// call Close more than once.
+func (t *TTS) Close() {
+	t.synthMu.Lock()
+	defer t.synthMu.Unlock()
+	t.closeOnce.Do(func() {
+		if t.release != nil {
+			t.release()
+		}
+	})
+}
 
 func (t *TTS) style(voiceID string) (VoiceStyle, error) {
 	if s, ok := t.styles[voiceID]; ok {
@@ -114,6 +151,17 @@ func rawI64(shape []int, data []int64) (*tensor.RawTensor, error) {
 // slice reproduces exactly what Synthesize returns. emit returning an error
 // aborts the stream.
 func (t *TTS) SynthesizeStream(text, voiceID string, opts Options, emit func(wav []float32) error) error {
+	t.synthMu.Lock()
+	defer t.synthMu.Unlock()
+
+	// gogpu's Metal implementation uses Objective-C autorelease pools, which
+	// must be created and drained on the same native thread. Keep the complete
+	// inference call pinned so every nested WebGPU operation observes that rule.
+	if t.backend != nil && t.backend.Device() == tensor.WebGPU {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+	}
+
 	if opts.Lang == "" {
 		opts.Lang = "en"
 	}

@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu implements the WebGPU backend for GPU-accelerated tensor operations.
 package webgpu
@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // AddGPU performs element-wise addition on GPU tensors.

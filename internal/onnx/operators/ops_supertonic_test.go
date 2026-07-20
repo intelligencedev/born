@@ -5,6 +5,7 @@ package operators
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/intelligencedev/born/internal/backend/cpu"
@@ -190,6 +191,46 @@ func TestPowInt64(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got %v, want %v", got, want)
 		}
+	}
+}
+
+func TestIntegerMath(t *testing.T) {
+	tests := []struct {
+		name string
+		op   string
+		want []int64
+	}{
+		{name: "add", op: "Add", want: []int64{5, 6, 7}},
+		{name: "sub", op: "Sub", want: []int64{-3, -2, -1}},
+		{name: "mul", op: "Mul", want: []int64{4, 8, 12}},
+		{name: "div", op: "Div", want: []int64{0, 0, 0}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			x := stI64(t, tensor.Shape{3}, []int64{1, 2, 3})
+			y := stI64(t, tensor.Shape{1}, []int64{4})
+			got := stExec(t, &Node{OpType: test.op}, x, y).AsInt64()
+			for i := range test.want {
+				if got[i] != test.want[i] {
+					t.Fatalf("%s result = %v, want %v", test.op, got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestIntegerComparison(t *testing.T) {
+	x := stI64(t, tensor.Shape{3}, []int64{1, 2, 3})
+	y := stI64(t, tensor.Shape{1}, []int64{2})
+	equal := stExec(t, &Node{OpType: "Equal"}, x, y).AsBool()
+	if !slices.Equal(equal, []bool{false, true, false}) {
+		t.Fatalf("Equal result = %v", equal)
+	}
+
+	x = stI64(t, tensor.Shape{3}, []int64{1, 2, 3})
+	less := stExec(t, &Node{OpType: "Less"}, x, y).AsBool()
+	if !slices.Equal(less, []bool{true, false, false}) {
+		t.Fatalf("Less result = %v", less)
 	}
 }
 

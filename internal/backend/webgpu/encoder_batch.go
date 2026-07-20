@@ -1,4 +1,4 @@
-//go:build windows || linux
+//go:build windows || linux || darwin
 
 // Package webgpu implements the WebGPU backend for GPU-accelerated tensor operations.
 package webgpu
@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/intelligencedev/born/internal/tensor"
 	"github.com/gogpu/gputypes"
 	wgpu "github.com/gogpu/wgpu"
+	"github.com/intelligencedev/born/internal/tensor"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,6 +19,9 @@ import (
 // getOrCreateEncoderLocked returns the active CommandEncoder, creating one if
 // necessary. MUST be called with pendingMu held.
 func (b *Backend) getOrCreateEncoderLocked() *wgpu.CommandEncoder {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	if b.activeBatch.encoder == nil {
 		var err error
 		b.activeBatch.encoder, err = b.device.CreateCommandEncoder(nil)
@@ -62,6 +65,7 @@ func (b *Backend) finishActiveBatchLocked() {
 		bindGroups: b.activeBatch.bindGroups,
 		lazyDatas:  b.activeBatch.lazyDatas,
 	})
+	b.pendingAllocBytes += b.activeBatch.allocBytes
 
 	b.activeBatch = encoderBatch{}
 }
@@ -91,6 +95,9 @@ func (b *Backend) addComputePassToEncoder(
 	dtype tensor.DataType,
 	res lazyResources,
 ) (*tensor.RawTensor, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Create lazy tensor first (outside the lock) so we have the LazyGPUData
 	// pointer to add to the batch for GC-safety.
 	lazyTensor, err := b.createLazyResult(resultBuf, resultSize, shape, dtype)
@@ -147,8 +154,19 @@ func (b *Backend) addComputePassToEncoder(
 		b.activeBatch.allocBytes += 64 // params are typically 16-64 bytes
 	}
 
+	// Metal requires a command-buffer boundary between dependent compute passes;
+	// keeping them in one encoder can expose only part of a producer dispatch to
+	// the consumer. Command buffers are still submitted together in one queue
+	// call, retaining batching without violating Metal's visibility boundary.
+	if separateEncoderPerPass {
+		b.finishActiveBatchLocked()
+	}
+
 	// Auto-flush on EITHER count threshold (TDR safety) OR memory threshold (OOM safety).
 	shouldFlush := b.activeBatch.count >= maxPendingBeforeFlush || b.activeBatch.allocBytes >= maxBatchAllocBytes
+	if separateEncoderPerPass {
+		shouldFlush = len(b.pending) >= maxPendingBeforeFlush || b.pendingAllocBytes >= maxBatchAllocBytes
+	}
 
 	if shouldFlush {
 		b.finishActiveBatchLocked()
