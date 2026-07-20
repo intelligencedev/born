@@ -4,7 +4,22 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	"github.com/intelligencedev/born/backend/cpu"
 )
+
+func TestBackendNameAndClose(t *testing.T) {
+	releaseCalls := 0
+	stt := &STT{backend: cpu.New(), release: func() { releaseCalls++ }}
+	if got := stt.BackendName(); got != "CPU" {
+		t.Fatalf("BackendName() = %q, want CPU", got)
+	}
+	stt.Close()
+	stt.Close()
+	if releaseCalls != 1 {
+		t.Fatalf("release called %d times, want 1", releaseCalls)
+	}
+}
 
 // Env-gated: MOONSHINE_MODEL_DIR (onnx/ + tokenizer.json), MOONSHINE_REF
 // (JSON with audio floats + onnxruntime greedy ids + text).
@@ -29,6 +44,7 @@ func TestTranscribeMatchesReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.Close()
 	ids, err := s.TranscribeTokens(r.Audio)
 	if err != nil {
 		t.Fatal(err)

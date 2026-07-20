@@ -56,38 +56,26 @@ func handlePRelu(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleSigmoid(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleSigmoid(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 1 {
 		return nil, fmt.Errorf("sigmoid requires 1 input, got %d", len(inputs))
 	}
-	result, err := tensor.Sigmoid(inputs[0])
-	if err != nil {
-		return nil, fmt.Errorf("sigmoid: %w", err)
-	}
-	return []*tensor.RawTensor{result}, nil
+	return []*tensor.RawTensor{ctx.Backend.Sigmoid(inputs[0])}, nil
 }
 
-func handleTanh(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleTanh(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 1 {
 		return nil, fmt.Errorf("tanh requires 1 input, got %d", len(inputs))
 	}
-	result, err := tensor.Tanh(inputs[0])
-	if err != nil {
-		return nil, fmt.Errorf("tanh: %w", err)
-	}
-	return []*tensor.RawTensor{result}, nil
+	return []*tensor.RawTensor{ctx.Backend.Tanh(inputs[0])}, nil
 }
 
-func handleSoftmax(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleSoftmax(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 1 {
 		return nil, fmt.Errorf("softmax requires 1 input, got %d", len(inputs))
 	}
 	axis := int(GetAttrInt(node, "axis", -1))
-	result, err := tensor.Softmax(inputs[0], axis)
-	if err != nil {
-		return nil, fmt.Errorf("softmax: %w", err)
-	}
-	return []*tensor.RawTensor{result}, nil
+	return []*tensor.RawTensor{ctx.Backend.Softmax(inputs[0], axis)}, nil
 }
 
 func handleLogSoftmax(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {

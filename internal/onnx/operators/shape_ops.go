@@ -5,6 +5,7 @@ package operators
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/intelligencedev/born/internal/tensor"
 )
@@ -23,7 +24,7 @@ func (r *Registry) registerShapeOps() {
 	r.Register("Expand", handleExpand)
 }
 
-func handleReshape(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleReshape(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("reshape requires 2 inputs (data, shape), got %d", len(inputs))
 	}
@@ -42,6 +43,13 @@ func handleReshape(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.R
 		}
 	}
 
+	if inputs[0].DType() == tensor.Float32 {
+		resolvedShape, err := resolveReshape(newShape, inputs[0].NumElements())
+		if err != nil {
+			return nil, fmt.Errorf("reshape: %w", err)
+		}
+		return []*tensor.RawTensor{ctx.Backend.Reshape(inputs[0], resolvedShape)}, nil
+	}
 	result, err := tensor.Reshape(inputs[0], newShape)
 	if err != nil {
 		return nil, fmt.Errorf("reshape: %w", err)
@@ -49,7 +57,7 @@ func handleReshape(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.R
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleTranspose(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleTranspose(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 1 {
 		return nil, fmt.Errorf("transpose requires 1 input, got %d", len(inputs))
 	}
@@ -63,6 +71,9 @@ func handleTranspose(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 		}
 	}
 
+	if inputs[0].DType() == tensor.Float32 {
+		return []*tensor.RawTensor{ctx.Backend.Transpose(inputs[0], axes...)}, nil
+	}
 	result, err := tensor.TransposeAxes(inputs[0], axes...)
 	if err != nil {
 		return nil, fmt.Errorf("transpose: %w", err)
@@ -70,7 +81,7 @@ func handleTranspose(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleSqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleSqueeze(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 {
 		return nil, fmt.Errorf("squeeze requires at least 1 input, got %d", len(inputs))
 	}
@@ -94,6 +105,15 @@ func handleSqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tenso
 		}
 	}
 
+	if inputs[0].DType() == tensor.Float32 && len(axes) > 0 {
+		normalized := normalizeAxes(axes, len(inputs[0].Shape()))
+		sort.Sort(sort.Reverse(sort.IntSlice(normalized)))
+		result := inputs[0]
+		for _, axis := range normalized {
+			result = ctx.Backend.Squeeze(result, axis)
+		}
+		return []*tensor.RawTensor{result}, nil
+	}
 	result, err := tensor.Squeeze(inputs[0], axes...)
 	if err != nil {
 		return nil, fmt.Errorf("squeeze: %w", err)
@@ -101,7 +121,7 @@ func handleSqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tenso
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleUnsqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleUnsqueeze(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 {
 		return nil, fmt.Errorf("unsqueeze requires at least 1 input, got %d", len(inputs))
 	}
@@ -127,6 +147,16 @@ func handleUnsqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 	if len(axes) == 0 {
 		return nil, fmt.Errorf("unsqueeze requires axes")
 	}
+	if inputs[0].DType() == tensor.Float32 {
+		outputRank := len(inputs[0].Shape()) + len(axes)
+		normalized := normalizeAxes(axes, outputRank)
+		sort.Ints(normalized)
+		result := inputs[0]
+		for _, axis := range normalized {
+			result = ctx.Backend.Unsqueeze(result, axis)
+		}
+		return []*tensor.RawTensor{result}, nil
+	}
 
 	result, err := tensor.Unsqueeze(inputs[0], axes...)
 	if err != nil {
@@ -135,12 +165,19 @@ func handleUnsqueeze(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleConcat(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleConcat(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 {
 		return nil, fmt.Errorf("concat requires at least 1 input")
 	}
 
 	axis := int(GetAttrInt(node, "axis", 0))
+	allFloat32 := true
+	for _, input := range inputs {
+		allFloat32 = allFloat32 && input != nil && input.DType() == tensor.Float32
+	}
+	if allFloat32 {
+		return []*tensor.RawTensor{ctx.Backend.Cat(inputs, axis)}, nil
+	}
 
 	result, err := tensor.Concat(inputs, axis)
 	if err != nil {
@@ -183,7 +220,7 @@ func handleSplit(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.
 	return results, nil
 }
 
-func handleSlice(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleSlice(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 3 {
 		return nil, fmt.Errorf("slice requires at least 3 inputs (data, starts, ends), got %d", len(inputs))
 	}
@@ -201,6 +238,15 @@ func handleSlice(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Raw
 
 	if bornSliceDebug {
 		fmt.Printf("SLICE in=%v starts=%v ends=%v axes=%v steps=%v\n", inputs[0].Shape(), starts, ends, axes, steps)
+	}
+	if inputs[0].DType() == tensor.Float32 {
+		if backend, ok := ctx.Backend.(tensor.STTBackend); ok {
+			result, err := backend.Slice(inputs[0], starts, ends, axes, steps)
+			if err != nil {
+				return nil, fmt.Errorf("slice: backend: %w", err)
+			}
+			return []*tensor.RawTensor{result}, nil
+		}
 	}
 
 	result, err := tensor.Slice(inputs[0], starts, ends, axes, steps)
@@ -238,7 +284,7 @@ func handleFlatten(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tenso
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleExpand(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleExpand(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("expand requires 2 inputs (input, shape), got %d", len(inputs))
 	}
@@ -257,11 +303,51 @@ func handleExpand(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.Ra
 		return nil, fmt.Errorf("expand: %w", err)
 	}
 
+	if inputs[0].DType() == tensor.Float32 {
+		return []*tensor.RawTensor{ctx.Backend.Expand(inputs[0], outShape)}, nil
+	}
 	result, err := tensor.Expand(inputs[0], outShape)
 	if err != nil {
 		return nil, fmt.Errorf("expand: %w", err)
 	}
 	return []*tensor.RawTensor{result}, nil
+}
+
+func normalizeAxes(axes []int, rank int) []int {
+	normalized := make([]int, len(axes))
+	for index, axis := range axes {
+		if axis < 0 {
+			axis += rank
+		}
+		normalized[index] = axis
+	}
+	return normalized
+}
+
+func resolveReshape(shape tensor.Shape, elements int) (tensor.Shape, error) {
+	resolved := shape.Clone()
+	inferred := -1
+	knownProduct := 1
+	for index, dimension := range resolved {
+		switch {
+		case dimension == -1:
+			if inferred >= 0 {
+				return nil, fmt.Errorf("multiple inferred dimensions")
+			}
+			inferred = index
+		case dimension < 0:
+			return nil, fmt.Errorf("invalid dimension %d", dimension)
+		default:
+			knownProduct *= dimension
+		}
+	}
+	if inferred >= 0 {
+		if knownProduct == 0 || elements%knownProduct != 0 {
+			return nil, fmt.Errorf("cannot infer shape %v for %d elements", shape, elements)
+		}
+		resolved[inferred] = elements / knownProduct
+	}
+	return resolved, nil
 }
 
 //nolint:gochecknoglobals // debug flag

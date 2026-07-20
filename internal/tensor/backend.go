@@ -136,6 +136,15 @@ type Conv1DBackend interface {
 	Conv1D(input, kernel, bias *RawTensor, stride, padLeft, padRight, dilation, groups int) (*RawTensor, error)
 }
 
+// STTBackend is an optional accelerator capability for operations that are
+// especially frequent in encoder-decoder speech models. Keeping these outside
+// Backend preserves compatibility with backends that use the host fallbacks.
+type STTBackend interface {
+	Pow(base, exponent *RawTensor) (*RawTensor, error)
+	Slice(input *RawTensor, starts, ends, axes, steps []int64) (*RawTensor, error)
+	InstanceNormalization(input, scale, bias *RawTensor, epsilon float32) (*RawTensor, error)
+}
+
 // MemoryReclaimer is an optional interface for backends that manage GPU or
 // device memory. When implemented, callers can explicitly reclaim unreferenced
 // buffers at well-defined lifecycle points (e.g. after Tape.Clear) instead

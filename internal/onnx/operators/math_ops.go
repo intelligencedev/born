@@ -32,9 +32,8 @@ func (r *Registry) registerMathOps() {
 // The exponent (second input) is commonly a scalar constant; a same-shape
 // exponent tensor is also supported.
 //
-// TODO: GPU path via Backend.Pow once a pow shader exists.
 // TODO: extend beyond float32 (float64, int32, int64) when callers need it.
-func handlePow(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handlePow(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("pow requires 2 inputs, got %d", len(inputs))
 	}
@@ -50,6 +49,13 @@ func handlePow(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTe
 	}
 	if base.NumElements() == 0 {
 		return nil, fmt.Errorf("pow: empty base tensor")
+	}
+	if backend, ok := ctx.Backend.(tensor.STTBackend); ok {
+		out, err := backend.Pow(base, inputs[1])
+		if err != nil {
+			return nil, fmt.Errorf("pow: backend: %w", err)
+		}
+		return []*tensor.RawTensor{out}, nil
 	}
 	b := base.AsFloat32()
 	e := inputs[1].AsFloat32()

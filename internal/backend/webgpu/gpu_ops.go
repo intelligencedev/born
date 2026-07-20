@@ -80,7 +80,7 @@ func (b *Backend) runBinaryOpGPU(a, c *GPUTensor, opName, shaderCode string) *GP
 
 	// Create output buffer (stays on GPU — caller owns it via GPUTensor).
 	resultSize := a.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -140,7 +140,7 @@ func (b *Backend) MatMulGPU(a, c *GPUTensor) *GPUTensor {
 	entry := b.getOrCreatePipeline("matmul", shader, bglBinary)
 
 	resultSize := uint64(m * n * a.dtype.Size()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -205,7 +205,7 @@ func (b *Backend) TransposeGPU(t *GPUTensor, axes ...int) *GPUTensor {
 	entry := b.getOrCreatePipeline("transpose", shader, bglUnary)
 
 	resultSize := uint64(m * n * t.dtype.Size()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -298,7 +298,7 @@ func (b *Backend) ClampGPU(t *GPUTensor, minValue, maxValue any) *GPUTensor {
 
 	// Create output buffer (stays on GPU!)
 	resultSize := t.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -380,7 +380,7 @@ func (b *Backend) SoftmaxGPU(t *GPUTensor, dim int) *GPUTensor {
 
 	// Create output buffer (stays on GPU!)
 	resultSize := t.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -454,7 +454,7 @@ func (b *Backend) runUnaryOpGPU(t *GPUTensor, opName, shaderCode string) *GPUTen
 
 	// Create output buffer (stays on GPU!)
 	resultSize := t.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})

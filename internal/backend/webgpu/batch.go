@@ -74,7 +74,7 @@ func (batch *CommandBatch) Submit() {
 	if err != nil {
 		panic(fmt.Sprintf("webgpu: CommandBatch.Submit: failed to finish encoder: %v", err))
 	}
-	if _, submitErr := batch.backend.queue.Submit(cmdBuffer); submitErr != nil {
+	if _, submitErr := submitQueue(batch.backend.queue, cmdBuffer); submitErr != nil {
 		panic(fmt.Sprintf("webgpu: CommandBatch.Submit: failed to submit commands: %v", submitErr))
 	}
 

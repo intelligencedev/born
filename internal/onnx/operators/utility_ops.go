@@ -207,11 +207,14 @@ func handleSize(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawT
 	return []*tensor.RawTensor{result}, nil
 }
 
-func handleWhere(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleWhere(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 3 {
 		return nil, fmt.Errorf("where requires 3 inputs (condition, X, Y), got %d", len(inputs))
 	}
 
+	if inputs[1] != nil && inputs[2] != nil && inputs[1].DType() == tensor.Float32 && inputs[2].DType() == tensor.Float32 {
+		return []*tensor.RawTensor{ctx.Backend.Where(inputs[0], inputs[1], inputs[2])}, nil
+	}
 	result, err := tensor.WhereRaw(inputs[0], inputs[1], inputs[2])
 	if err != nil {
 		return nil, fmt.Errorf("where: %w", err)

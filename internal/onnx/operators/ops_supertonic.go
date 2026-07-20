@@ -342,8 +342,8 @@ func (r *Registry) registerSupertonicOps() {
 	r.Register("ReduceSum", handleReduceSum)
 }
 
-func handleReduceSum(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return handleReduce(node, inputs, reduceSum)
+func handleReduceSum(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return handleReduce(ctx, node, inputs, reduceSum)
 }
 
 func unaryFloat32(name string, in *tensor.RawTensor, fn func(float32) float32) ([]*tensor.RawTensor, error) {
@@ -364,12 +364,12 @@ func unaryFloat32(name string, in *tensor.RawTensor, fn func(float32) float32) (
 	return []*tensor.RawTensor{out}, nil
 }
 
-func handleSin(_ *Context, _ *Node, in []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return unaryFloat32("sin", in[0], func(x float32) float32 { return float32(math.Sin(float64(x))) })
+func handleSin(ctx *Context, _ *Node, in []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return []*tensor.RawTensor{ctx.Backend.Sin(in[0])}, nil
 }
 
-func handleCos(_ *Context, _ *Node, in []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return unaryFloat32("cos", in[0], func(x float32) float32 { return float32(math.Cos(float64(x))) })
+func handleCos(ctx *Context, _ *Node, in []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return []*tensor.RawTensor{ctx.Backend.Cos(in[0])}, nil
 }
 
 func handleReciprocal(_ *Context, _ *Node, in []*tensor.RawTensor) ([]*tensor.RawTensor, error) {

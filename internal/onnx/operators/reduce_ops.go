@@ -25,16 +25,16 @@ const (
 	reduceSum
 )
 
-func handleReduceMean(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return handleReduce(node, inputs, reduceMean)
+func handleReduceMean(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return handleReduce(ctx, node, inputs, reduceMean)
 }
 
-func handleReduceMax(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return handleReduce(node, inputs, reduceMax)
+func handleReduceMax(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return handleReduce(ctx, node, inputs, reduceMax)
 }
 
-func handleReduceMin(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
-	return handleReduce(node, inputs, reduceMin)
+func handleReduceMin(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+	return handleReduce(ctx, node, inputs, reduceMin)
 }
 
 // handleReduce implements ONNX Reduce* (opset 13/18 semantics).
@@ -45,7 +45,7 @@ func handleReduceMin(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*ten
 // unchanged, otherwise all axes are reduced.
 //
 // TODO: extend beyond float32 (float64, int32, int64) when callers need it.
-func handleReduce(node *Node, inputs []*tensor.RawTensor, kind reduceKind) ([]*tensor.RawTensor, error) {
+func handleReduce(ctx *Context, node *Node, inputs []*tensor.RawTensor, kind reduceKind) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 || inputs[0] == nil {
 		return nil, fmt.Errorf("reduce: missing data input")
 	}
@@ -71,12 +71,36 @@ func handleReduce(node *Node, inputs []*tensor.RawTensor, kind reduceKind) ([]*t
 			axes = append(axes, i)
 		}
 	}
+	if kind == reduceMean {
+		return reduceMeanWithBackend(ctx, data, axes, keepdims)
+	}
 
 	out, err := reduceFloat32(data, axes, keepdims, kind)
 	if err != nil {
 		return nil, err
 	}
 	return []*tensor.RawTensor{out}, nil
+}
+
+func reduceMeanWithBackend(ctx *Context, data *tensor.RawTensor, axes []int, keepdims bool) ([]*tensor.RawTensor, error) {
+	reduced, err := markReducedAxes(axes, len(data.Shape()))
+	if err != nil {
+		return nil, err
+	}
+	result := data
+	for dimension, shouldReduce := range reduced {
+		if shouldReduce {
+			result = ctx.Backend.MeanDim(result, dimension, true)
+		}
+	}
+	if !keepdims {
+		for dimension := len(reduced) - 1; dimension >= 0; dimension-- {
+			if reduced[dimension] {
+				result = ctx.Backend.Squeeze(result, dimension)
+			}
+		}
+	}
+	return []*tensor.RawTensor{result}, nil
 }
 
 // reduceAxes reads the axes either from the second input (opset 18) or the

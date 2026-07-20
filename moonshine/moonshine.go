@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/intelligencedev/born/backend/cpu"
 	"github.com/intelligencedev/born/internal/tensor"
@@ -26,18 +28,33 @@ const (
 )
 
 type STT struct {
-	encoder     onnx.Model
-	decoder     onnx.Model
-	decoderPast onnx.Model
-	pastInputs  []string // decoder_with_past input names (excluding input_ids)
-	vocab       []string // id -> token
+	encoder      onnx.Model
+	decoder      onnx.Model
+	decoderPast  onnx.Model
+	pastInputs   []string // decoder_with_past input names (excluding input_ids)
+	vocab        []string // id -> token
+	backend      tensor.Backend
+	release      func()
+	closeOnce    sync.Once
+	transcribeMu sync.Mutex
 }
 
 // New loads the three ONNX graphs and tokenizer.json from modelDir
 // (onnx/encoder_model.onnx, onnx/decoder_model.onnx,
 // onnx/decoder_with_past_model.onnx, tokenizer.json).
 func New(modelDir string) (*STT, error) {
-	backend := cpu.New()
+	if preferred, release, err := preferredBackend(); err == nil {
+		stt, loadErr := newWithBackend(modelDir, preferred)
+		if loadErr == nil {
+			stt.release = release
+			return stt, nil
+		}
+		release()
+	}
+	return newWithBackend(modelDir, cpu.New())
+}
+
+func newWithBackend(modelDir string, backend tensor.Backend) (*STT, error) {
 	opts := onnx.DefaultLoadOptions()
 	opts.StrictMode = true
 	load := func(name string) (onnx.Model, error) {
@@ -65,7 +82,30 @@ func New(modelDir string) (*STT, error) {
 			pastIn = append(pastIn, n)
 		}
 	}
-	return &STT{encoder: enc, decoder: dec, decoderPast: decP, pastInputs: pastIn, vocab: vocab}, nil
+	return &STT{
+		encoder: enc, decoder: dec, decoderPast: decP,
+		pastInputs: pastIn, vocab: vocab, backend: backend,
+	}, nil
+}
+
+// BackendName reports the compute backend selected for inference.
+func (s *STT) BackendName() string {
+	if s.backend == nil {
+		return ""
+	}
+	return s.backend.Name()
+}
+
+// Close releases accelerator resources owned by the pipeline. It is safe to
+// call Close more than once.
+func (s *STT) Close() {
+	s.transcribeMu.Lock()
+	defer s.transcribeMu.Unlock()
+	s.closeOnce.Do(func() {
+		if s.release != nil {
+			s.release()
+		}
+	})
 }
 
 func loadVocab(path string) ([]string, error) {
@@ -149,6 +189,14 @@ func argmaxLastRow(logits *tensor.RawTensor) int64 {
 // TranscribeTokens runs greedy decoding and returns the raw token ids
 // (including start and eos).
 func (s *STT) TranscribeTokens(audio []float32) ([]int64, error) {
+	s.transcribeMu.Lock()
+	defer s.transcribeMu.Unlock()
+
+	if s.backend != nil && s.backend.Device() == tensor.WebGPU {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+	}
+
 	if len(audio) == 0 {
 		return nil, fmt.Errorf("moonshine: empty audio")
 	}

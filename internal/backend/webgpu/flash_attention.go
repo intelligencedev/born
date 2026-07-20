@@ -95,7 +95,7 @@ func (b *Backend) FlashAttentionGPU(
 	defer bufferV.Release()
 
 	outputSize := uint64(q.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferOutput, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferOutput, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc,
 		Size:  outputSize,
 	})

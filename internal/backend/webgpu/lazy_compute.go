@@ -185,7 +185,7 @@ func (b *Backend) copyGPUBuffer(srcBuffer *wgpu.Buffer, size uint64) *wgpu.Buffe
 	b.flushCommands()
 	b.device.Poll(wgpu.PollWait)
 
-	dstBuffer, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	dstBuffer, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  size,
 	})
@@ -202,7 +202,7 @@ func (b *Backend) copyGPUBuffer(srcBuffer *wgpu.Buffer, size uint64) *wgpu.Buffe
 	if finErr != nil {
 		panic(fmt.Sprintf("webgpu: copyGPUBuffer: failed to finish encoder: %v", finErr))
 	}
-	if _, err := b.queue.Submit(cmdBuffer); err != nil {
+	if _, err := submitQueue(b.queue, cmdBuffer); err != nil {
 		panic(fmt.Sprintf("webgpu: copyGPUBuffer: submit failed: %v", err))
 	}
 
@@ -774,7 +774,7 @@ func (b *Backend) runTransposeNDLazy(input *tensor.RawTensor, axes []int) (*tens
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
 
 	// Result buffer: written by the compute shader; ownership transfers to LazyGPUData.
-	bufferResult, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc,
 		Size:  resultSize,
 	})
@@ -916,7 +916,7 @@ func (b *Backend) runExpandLazy(input *tensor.RawTensor, newShape tensor.Shape) 
 	resultSize := uint64(resultNumElements) * elementSize //nolint:gosec // G115: integer overflow conversion int -> uint64
 
 	// Result buffer: written by the compute shader; ownership transfers to LazyGPUData.
-	bufferResult, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc,
 		Size:  resultSize,
 	})
@@ -1041,7 +1041,7 @@ func (b *Backend) runGatherLazy(input *tensor.RawTensor, dim int, indices *tenso
 	gatherResultSize := uint64(gatherBatchSize) * uint64(outputK) * 4 //nolint:gosec // G115: integer overflow conversion int -> uint64
 
 	// Result buffer: written by the compute shader; ownership transfers to LazyGPUData.
-	bufferResult, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc,
 		Size:  gatherResultSize,
 	})
@@ -1187,7 +1187,7 @@ func (b *Backend) runWhereLazy(condition, x, y *tensor.RawTensor) (*tensor.RawTe
 	resultSize := uint64(x.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
 
 	// Result buffer: written by the compute shader; ownership transfers to LazyGPUData.
-	bufferResult, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc,
 		Size:  resultSize,
 	})
@@ -1260,7 +1260,7 @@ func (b *Backend) runSumLazy(input *tensor.RawTensor) (*tensor.RawTensor, error)
 	numWorkgroups := uint32((numElements + workgroupSize - 1) / workgroupSize) //nolint:gosec // G115: integer overflow conversion int -> uint32
 	partialSumsSize := uint64(numWorkgroups) * 4
 
-	bufferPartialSums, bufErr := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferPartialSums, bufErr := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  partialSumsSize,
 	})
@@ -1348,7 +1348,7 @@ func (b *Backend) runClampLazy(input *tensor.RawTensor, minBound, maxBound any) 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
 	// Result buffer: written by the compute shader; ownership transfers to LazyGPUData.
 	// CopyDst is retained here for potential future in-place operations.
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1800,7 +1800,7 @@ func (b *Backend) runCatLazy(tensors []*tensor.RawTensor, dim int) (*tensor.RawT
 	// Allocate the single shared output buffer. Ownership transfers to LazyGPUData below.
 	// CopyDst is needed because we write into it from multiple compute passes.
 	// Cannot use gpuPool here: the buffer must survive across all per-input dispatches.
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})

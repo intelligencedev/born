@@ -78,11 +78,14 @@ func sign64(v int64) int64 {
 }
 
 // handleNeg implements elementwise negation for float32 and int64.
-func handleNeg(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleNeg(ctx *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 1 || inputs[0] == nil {
 		return nil, fmt.Errorf("neg: requires 1 input")
 	}
 	x := inputs[0]
+	if x.DType() == tensor.Float32 {
+		return []*tensor.RawTensor{ctx.Backend.MulScalar(x, float32(-1))}, nil
+	}
 	out, err := tensor.NewRaw(x.Shape(), x.DType(), x.Device())
 	if err != nil {
 		return nil, err
@@ -107,7 +110,7 @@ func handleNeg(_ *Context, _ *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTe
 // handleInstanceNorm implements ONNX InstanceNormalization for float32
 // [N, C, spatial...]: per-(N,C) mean/variance over spatial dims, then
 // y = scale[c]*(x-mean)/sqrt(var+eps) + bias[c].
-func handleInstanceNorm(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleInstanceNorm(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) != 3 || inputs[0] == nil || inputs[1] == nil || inputs[2] == nil {
 		return nil, fmt.Errorf("instancenorm: requires x, scale, bias")
 	}
@@ -120,6 +123,13 @@ func handleInstanceNorm(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*
 		return nil, fmt.Errorf("instancenorm: expected >=3D input, got %v", shape)
 	}
 	eps := float64(GetAttrFloat(node, "epsilon", 1e-5))
+	if backend, ok := ctx.Backend.(tensor.STTBackend); ok {
+		out, err := backend.InstanceNormalization(x, inputs[1], inputs[2], float32(eps))
+		if err != nil {
+			return nil, fmt.Errorf("instancenorm: backend: %w", err)
+		}
+		return []*tensor.RawTensor{out}, nil
+	}
 	n, c := shape[0], shape[1]
 	spatial := 1
 	for _, d := range shape[2:] {
@@ -161,7 +171,7 @@ func handleInstanceNorm(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*
 // handleTrilu implements ONNX Trilu for float32 [..., R, C]: upper=1 (default)
 // zeroes elements below the k-th diagonal, upper=0 zeroes above it. k comes
 // from the optional second input (int64 scalar, default 0).
-func handleTrilu(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
+func handleTrilu(ctx *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.RawTensor, error) {
 	if len(inputs) < 1 || inputs[0] == nil {
 		return nil, fmt.Errorf("trilu: requires input")
 	}
@@ -183,11 +193,11 @@ func handleTrilu(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.
 	for _, d := range shape[:len(shape)-2] {
 		batch *= d
 	}
-	out, err := tensor.NewRaw(shape, tensor.Float32, x.Device())
+	mask, err := tensor.NewRaw(shape, tensor.Float32, tensor.CPU)
 	if err != nil {
 		return nil, err
 	}
-	xd, od := x.AsFloat32(), out.AsFloat32()
+	maskData := mask.AsFloat32()
 	for b := 0; b < batch; b++ {
 		base := b * rows * cols
 		for r := 0; r < rows; r++ {
@@ -197,10 +207,10 @@ func handleTrilu(_ *Context, node *Node, inputs []*tensor.RawTensor) ([]*tensor.
 					keep = int64(c-r) <= k
 				}
 				if keep {
-					od[base+r*cols+c] = xd[base+r*cols+c]
+					maskData[base+r*cols+c] = 1
 				}
 			}
 		}
 	}
-	return []*tensor.RawTensor{out}, nil
+	return []*tensor.RawTensor{ctx.Backend.Mul(x, mask)}, nil
 }

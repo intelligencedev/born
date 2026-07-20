@@ -229,7 +229,7 @@ func (b *Backend) ReLUBackwardGPU(input, grad *GPUTensor) *GPUTensor {
 
 	// Create output buffer
 	resultSize := input.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -327,7 +327,7 @@ func (b *Backend) SoftmaxBackwardGPU(output, grad *GPUTensor, dim int) *GPUTenso
 
 	// Create output buffer
 	resultSize := output.ByteSize()
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -407,7 +407,7 @@ func (b *Backend) SumDimGPU(t *GPUTensor, dim int, keepDim bool) *GPUTensor {
 	}
 
 	resultSize := uint64(batchSize * t.dtype.Size()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})

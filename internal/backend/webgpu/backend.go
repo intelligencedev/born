@@ -361,7 +361,7 @@ func (b *Backend) flushCommands() {
 		cmdBufs[i] = p.cmdBuffer
 	}
 
-	if _, err := b.queue.Submit(cmdBufs...); err != nil {
+	if _, err := submitQueue(b.queue, cmdBufs...); err != nil {
 		panic("webgpu: flushCommands: submit failed: " + err.Error())
 	}
 
@@ -508,6 +508,9 @@ func IsAvailable() bool {
 }
 
 func isAvailableProbe() (available bool) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	defer func() {
 		if r := recover(); r != nil {
 			available = false
@@ -556,6 +559,9 @@ func isAvailableProbe() (available bool) {
 
 // ListAdapters returns information about all available GPU adapters.
 func ListAdapters() ([]*wgpu.AdapterInfo, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	instance, err := wgpu.CreateInstance(nil)
 	if err != nil {
 		return nil, fmt.Errorf("webgpu: failed to create instance: %w", err)
@@ -719,7 +725,7 @@ func (b *Backend) ReadGPUBuffer(bufferPtr unsafe.Pointer, size uint64) ([]byte, 
 	resultBuf := (*wgpu.Buffer)(bufferPtr)
 
 	// Create a transient MapRead staging buffer — only at readback time.
-	stagingBuf, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stagingBuf, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageMapRead | gputypes.BufferUsageCopyDst,
 		Size:  size,
 	})
@@ -738,7 +744,7 @@ func (b *Backend) ReadGPUBuffer(bufferPtr unsafe.Pointer, size uint64) ([]byte, 
 	if err != nil {
 		return nil, fmt.Errorf("webgpu: ReadGPUBuffer: finish encoder: %w", err)
 	}
-	if _, err := b.queue.Submit(cmdBuf); err != nil {
+	if _, err := submitQueue(b.queue, cmdBuf); err != nil {
 		return nil, fmt.Errorf("webgpu: ReadGPUBuffer: submit copy: %w", err)
 	}
 	b.device.Poll(wgpu.PollWait)

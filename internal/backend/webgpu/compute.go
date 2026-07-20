@@ -14,6 +14,24 @@ import (
 	"github.com/intelligencedev/born/internal/tensor"
 )
 
+// createDeviceBuffer pins the goroutine across gogpu's Metal autorelease pool.
+// The native pool is thread-affine, while an unpinned Go goroutine may migrate
+// between the Objective-C allocation and drain calls.
+func createDeviceBuffer(device *wgpu.Device, descriptor *wgpu.BufferDescriptor) (*wgpu.Buffer, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return device.CreateBuffer(descriptor)
+}
+
+// submitQueue pins the goroutine across gogpu's Metal autorelease pool. Queue
+// submission allocates Objective-C objects whose pool must be drained on the
+// same OS thread, even when the caller is not a long-lived inference goroutine.
+func submitQueue(queue *wgpu.Queue, commandBuffers ...*wgpu.CommandBuffer) (uint64, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return queue.Submit(commandBuffers...)
+}
+
 // compileShader compiles WGSL shader code into a ShaderModule.
 // Results are cached in the Backend's shaders map.
 // Panics on failure because all shaders are statically embedded and compilation
@@ -200,7 +218,7 @@ func (b *Backend) execComputePass(pipeline *wgpu.ComputePipeline, bg *wgpu.BindG
 	if err != nil {
 		panic(fmt.Sprintf("webgpu: encoder finish error: %v", err))
 	}
-	if _, err := b.queue.Submit(cmdBuffer); err != nil {
+	if _, err := submitQueue(b.queue, cmdBuffer); err != nil {
 		panic(fmt.Sprintf("webgpu: queue submit error: %v", err))
 	}
 }
@@ -233,7 +251,7 @@ func (b *Backend) execComputeAndRead(
 	b.flushCommands()
 
 	// Create staging buffer for readback (MapRead | CopyDst).
-	stagingBuf, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stagingBuf, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageMapRead | gputypes.BufferUsageCopyDst | gputypes.BufferUsageCopySrc,
 		Size:  resultSize,
 	})
@@ -269,7 +287,7 @@ func (b *Backend) execComputeAndRead(
 	if err != nil {
 		panic(fmt.Sprintf("webgpu: execComputeAndRead: encoder finish error: %v", err))
 	}
-	if _, err := b.queue.Submit(cmdBuffer); err != nil {
+	if _, err := submitQueue(b.queue, cmdBuffer); err != nil {
 		panic(fmt.Sprintf("webgpu: execComputeAndRead: queue submit error: %v", err))
 	}
 
@@ -298,7 +316,7 @@ func (b *Backend) createBuffer(data []byte, usage gputypes.BufferUsage) *wgpu.Bu
 
 	size := uint64(len(data))
 
-	buffer, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	buffer, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage:            usage,
 		Size:             size,
 		MappedAtCreation: true,
@@ -335,7 +353,7 @@ func (b *Backend) createUniformBuffer(data []byte) *wgpu.Buffer {
 	size := uint64(len(data))
 	alignedSize := (size + 15) &^ 15
 
-	buffer, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	buffer, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage:            gputypes.BufferUsageUniform | gputypes.BufferUsageCopyDst,
 		Size:             alignedSize,
 		MappedAtCreation: true,
@@ -386,7 +404,7 @@ func (b *Backend) readBuffer(srcBuffer *wgpu.Buffer, size uint64) ([]byte, error
 	b.device.Poll(wgpu.PollWait)
 
 	// Create staging buffer for reading (MAP_READ | COPY_DST).
-	stagingBuffer, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	stagingBuffer, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageMapRead | gputypes.BufferUsageCopyDst | gputypes.BufferUsageCopySrc,
 		Size:  size,
 	})
@@ -405,7 +423,7 @@ func (b *Backend) readBuffer(srcBuffer *wgpu.Buffer, size uint64) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("webgpu: encoder finish: %w", err)
 	}
-	if _, err = b.queue.Submit(cmdBuffer); err != nil {
+	if _, err = submitQueue(b.queue, cmdBuffer); err != nil {
 		return nil, fmt.Errorf("webgpu: queue submit: %w", err)
 	}
 
@@ -489,7 +507,7 @@ func (b *Backend) runBinaryOp(a, other *tensor.RawTensor, shaderName, shaderCode
 	defer bufferOther.Release()
 
 	resultSize := uint64(a.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -577,7 +595,7 @@ func (b *Backend) runComparisonOp(a, other *tensor.RawTensor, shaderName, shader
 	defer bufferOther.Release()
 
 	resultSize := uint64(a.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -627,7 +645,7 @@ func (b *Backend) runUnaryOp(input *tensor.RawTensor, shaderName, shaderCode str
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -692,7 +710,7 @@ func (b *Backend) runMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor, erro
 
 	resultShape := tensor.Shape{int(M), int(N)}
 	resultSize := uint64(int(M) * int(N) * 4) //nolint:gosec // float32 = 4 bytes
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -754,7 +772,7 @@ func (b *Backend) runTranspose(input *tensor.RawTensor) (*tensor.RawTensor, erro
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -811,7 +829,7 @@ func (b *Backend) runClamp(input *tensor.RawTensor, minBound, maxBound any) (*te
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -872,7 +890,7 @@ func (b *Backend) runScalarOp(input *tensor.RawTensor, scalar float32, shaderNam
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -929,7 +947,7 @@ func (b *Backend) runSoftmax(input *tensor.RawTensor) (*tensor.RawTensor, error)
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1039,7 +1057,7 @@ func (b *Backend) runBatchMatMul(a, other *tensor.RawTensor) (*tensor.RawTensor,
 	defer bufferB.Release()
 
 	resultSize := uint64(batch) * uint64(M) * uint64(N) * 4 // float32 = 4 bytes
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1142,7 +1160,7 @@ func (b *Backend) runConv2D(input, kernel *tensor.RawTensor, stride, padding int
 	defer bufferKernel.Release()
 
 	resultSize := uint64(batchSize) * uint64(outChannels) * uint64(outHeight) * uint64(outWidth) * 4
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1224,7 +1242,7 @@ func (b *Backend) runMaxPool2D(input *tensor.RawTensor, kernelSize, stride int) 
 	defer bufferInput.Release()
 
 	resultSize := uint64(batchSize) * uint64(channels) * uint64(outHeight) * uint64(outWidth) * 4
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1349,7 +1367,7 @@ func (b *Backend) runSumGPU(input *tensor.RawTensor) (*tensor.RawTensor, error) 
 	numWorkgroups := uint32((numElements + workgroupSize - 1) / workgroupSize) //nolint:gosec // G115: integer overflow conversion int -> uint32
 	partialSumsSize := uint64(numWorkgroups) * 4
 
-	bufferPartialSums, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferPartialSums, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  partialSumsSize,
 	})
@@ -1446,7 +1464,7 @@ func (b *Backend) runArgmax(input *tensor.RawTensor, dim int) (*tensor.RawTensor
 	defer bufferInput.Release()
 
 	resultSize := uint64(batchSize) * 4
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1514,7 +1532,7 @@ func (b *Backend) runEmbedding(weight, indices *tensor.RawTensor) (*tensor.RawTe
 	defer bufferIndices.Release()
 
 	resultSize := uint64(numIndices) * uint64(embeddingDim) * 4 //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -1682,7 +1700,7 @@ func (b *Backend) runWhere(condition, x, y *tensor.RawTensor) (*tensor.RawTensor
 	defer bufferY.Release()
 
 	resultSizeWhere := uint64(x.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResultWhere, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResultWhere, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSizeWhere,
 	})
@@ -1768,7 +1786,7 @@ func (b *Backend) runGather(input *tensor.RawTensor, dim int, indices *tensor.Ra
 	defer bufferIndices.Release()
 
 	gatherResultSize := uint64(gatherBatchSize) * uint64(outputK) * 4 //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResultGather, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResultGather, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  gatherResultSize,
 	})
@@ -1946,7 +1964,7 @@ func (b *Backend) runTransposeND(input *tensor.RawTensor, axes []int) (*tensor.R
 	defer bufferInput.Release()
 
 	resultSize := uint64(input.ByteSize()) //nolint:gosec // G115: integer overflow conversion int -> uint64
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
@@ -2074,7 +2092,7 @@ func (b *Backend) runExpand(input *tensor.RawTensor, newShape tensor.Shape) (*te
 	elementSize := uint64(input.DType().Size())           //nolint:gosec // G115: integer overflow conversion int -> uint64
 	resultSize := uint64(resultNumElements) * elementSize //nolint:gosec // G115: integer overflow conversion int -> uint64
 
-	bufferResult, err := b.device.CreateBuffer(&wgpu.BufferDescriptor{
+	bufferResult, err := createDeviceBuffer(b.device, &wgpu.BufferDescriptor{
 		Usage: gputypes.BufferUsageStorage | gputypes.BufferUsageCopySrc | gputypes.BufferUsageCopyDst,
 		Size:  resultSize,
 	})
